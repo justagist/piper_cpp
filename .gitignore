@@ -1,0 +1,41 @@
+# Build and install folders
+build/
+install/
+log/
+bin/
+lib/
+*.so
+*.so.*
+*.a
+*.o
+*.obj
+*.dll
+*.exe
+
+# ROS2 specific
+*.pyc
+*.swp
+*.bak
+*.DS_Store
+*.egg-info/
+*.log
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Colcon build artifacts
+colcon*
+*.colcon_install_layout
+
+# Visual Studio Code
+.vscode/
+
+# CLion
+.idea/
+cmake-build-*/
+
+# Test results
+test_results/
