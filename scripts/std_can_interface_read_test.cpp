@@ -3,6 +3,7 @@
 #include <csignal>
 #include <iostream>
 #include <thread>
+#include <iomanip>
 
 using namespace piper_cpp;
 
@@ -10,7 +11,7 @@ bool stop = false;
 
 void signalHandler(int) { stop = true; }
 
-void exampleReceiveCallback(const struct can_frame& frame)
+void exampleReceiveCallback(const struct can_frame& frame, double timestamp)
 {
     std::cout << "[Callback] Received CAN frame:" << " ID=0x" << std::hex << frame.can_id << " DLC=" << std::dec
               << (int)frame.can_dlc << " Data=";
@@ -18,6 +19,7 @@ void exampleReceiveCallback(const struct can_frame& frame)
     {
         std::printf("%02X ", frame.data[i]);
     }
+    std::cout << std::fixed << std::setprecision(6) << " Timestamp=" << timestamp << "s";
     std::cout << std::endl;
 }
 

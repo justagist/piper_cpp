@@ -23,7 +23,7 @@ namespace piper_cpp
 class StdCanInterface
 {
 public:
-    using CanCallback = std::function<void(const struct can_frame&)>;
+    using CanCallback = std::function<void(const struct can_frame&, double)>;
 
     StdCanInterface(
         std::string channel_name = "can0", int expected_bitrate = 1000000, bool judge_flag = true,
@@ -50,15 +50,19 @@ public:
             perror("socket");
             return false;
         }
-        struct ifreq ifr
-        {
-        };
-        std::strncpy(ifr.ifr_name, channel_name_.c_str(), IFNAMSIZ);
+
+        int enable = 1;
+        if (setsockopt(sock_, SOL_SOCKET, SO_TIMESTAMP, &enable, sizeof(enable)) < 0)
+            perror("setsockopt SO_TIMESTAMP");
+
+        struct ifreq ifr;
+        strncpy(ifr.ifr_name, channel_name_.c_str(), IFNAMSIZ);
         if (ioctl(sock_, SIOCGIFINDEX, &ifr) < 0)
         {
             perror("ioctl");
             return false;
         }
+
         addr_.can_family = AF_CAN;
         addr_.can_ifindex = ifr.ifr_ifindex;
         if (bind(sock_, (struct sockaddr*)&addr_, sizeof(addr_)) < 0)
@@ -96,11 +100,40 @@ public:
     {
         if (sock_ < 0)
             return false;
+
         struct can_frame frame;
-        int nbytes = read(sock_, &frame, sizeof(frame));
-        if (nbytes > 0 && callback_)
+        struct msghdr msg = {};
+        struct iovec iov;
+        char ctrlmsg[CMSG_SPACE(sizeof(struct timeval))];
+
+        iov.iov_base = &frame;
+        iov.iov_len = sizeof(frame);
+
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = ctrlmsg;
+        msg.msg_controllen = sizeof(ctrlmsg);
+
+        ssize_t nbytes = recvmsg(sock_, &msg, 0);
+        if (nbytes < 0)
+            return false;
+
+        double timestamp = 0.0;
+        struct timeval tv;
+        memset(&tv, 0, sizeof(tv));
+        for (struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg))
         {
-            callback_(frame);
+            if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SO_TIMESTAMP)
+            {
+                memcpy(&tv, CMSG_DATA(cmsg), sizeof(tv));
+                timestamp = tv.tv_sec + tv.tv_usec / 1e6;
+                break;
+            }
+        }
+
+        if (callback_)
+        {
+            callback_(frame, timestamp);
             return true;
         }
         return false;
