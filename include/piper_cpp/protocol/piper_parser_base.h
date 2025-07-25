@@ -1,5 +1,5 @@
 #pragma once
-#include "piper_cpp/types/piper_message.h"
+#include "piper_cpp/types/types.h"
 #include <linux/can.h> // struct can_frame
 #include <memory>
 

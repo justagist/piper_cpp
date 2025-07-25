@@ -50,6 +50,11 @@ int main(int argc, char* argv[])
                     std::cout << std::dec << " DLC=" << msg.raw_data_len;
                     std::cout << std::fixed << std::setprecision(6) << " Timestamp=" << msg.timestamp << "s";
                     std::cout << std::endl;
+                    if (msg.type == ArmMsgType::StatusFeedback)
+                    {
+                        std::cout << "Decoded Message: " << std::endl;
+                        std::cout << msg.arm_status_msgs.toString() << std::endl;
+                    }
                 }
                 else
                 {
@@ -74,7 +79,7 @@ int main(int argc, char* argv[])
         while (!stop)
         {
             can.readCanMessage();
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            // std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
         std::cout << "\nShutting down CAN..." << std::endl;
