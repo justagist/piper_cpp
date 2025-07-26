@@ -11,6 +11,7 @@ class PiperParserBase
 public:
     virtual ~PiperParserBase() = default;
     virtual bool decodeMessage(const struct can_frame& rx_frame, double timestamp, PiperMessage& msg) = 0;
+    virtual bool encodeMessage(const PiperMessage& msg, struct can_frame& tx_frame) = 0;
     virtual uint8_t getProtocolVersion() const = 0;
 };
 

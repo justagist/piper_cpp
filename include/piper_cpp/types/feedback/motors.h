@@ -7,46 +7,6 @@
 namespace piper_cpp
 {
 
-struct ArmMsgFeedbackCurrentMotorAngleLimitMaxSpd
-{
-    uint8_t motor_num{0};       // Joint motor number [1..6]
-    int16_t max_angle_limit{0}; // Maximum angle limit (0.1 deg)
-    int16_t min_angle_limit{0}; // Minimum angle limit (0.1 deg)
-    int16_t max_joint_spd{0};   // Maximum joint speed (0.001 rad/s)
-
-    std::string toString() const
-    {
-        std::ostringstream oss;
-        oss << "ArmMsgFeedbackCurrentMotorAngleLimitMaxSpd(\n"
-            << "  motor_num: " << int(motor_num) << "\n"
-            << "  max_angle_limit: " << max_angle_limit << "\n"
-            << "  min_angle_limit: " << min_angle_limit << "\n"
-            << "  max_joint_spd: " << max_joint_spd << "\n"
-            << ")";
-        return oss.str();
-    }
-};
-
-// Container for all 6 motors' angle/speed feedback (indexed from 1 to 6)
-struct ArmMsgFeedbackAllCurrentMotorAngleLimitMaxSpd
-{
-    ArmMsgFeedbackCurrentMotorAngleLimitMaxSpd motor[7]; // 0 unused, 1~6 valid
-
-    ArmMsgFeedbackAllCurrentMotorAngleLimitMaxSpd()
-    {
-        for (int i = 0; i < 7; ++i)
-            motor[i] = ArmMsgFeedbackCurrentMotorAngleLimitMaxSpd{};
-    }
-
-    std::string toString() const
-    {
-        std::ostringstream oss;
-        for (int i = 1; i <= 6; ++i)
-            oss << motor[i].toString() << "\n";
-        return oss.str();
-    }
-};
-
 struct ArmMsgFeedbackCurrentMotorMaxAccLimit
 {
     uint8_t joint_motor_num{0}; // Joint motor number [1..6]

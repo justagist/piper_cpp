@@ -8,12 +8,48 @@ namespace piper_cpp
 // Utility for endian conversion, assumes network (big-endian) order.
 static int32_t bytesToInt32(const uint8_t* data)
 {
-    return (int32_t(data[0]) << 24) | (int32_t(data[1]) << 16) | (int32_t(data[2]) << 8) | int32_t(data[3]);
+    uint32_t val = (uint32_t(data[0]) << 24) | (uint32_t(data[1]) << 16) | (uint32_t(data[2]) << 8) | uint32_t(data[3]);
+    return static_cast<int32_t>(val); // This cast will sign-extend if MSB is set
 }
-static int16_t bytesToInt16(const uint8_t* data) { return (int16_t)((uint16_t(data[0]) << 8) | uint16_t(data[1])); }
+
+static int16_t bytesToInt16(const uint8_t* data)
+{
+    uint16_t val = (uint16_t(data[0]) << 8) | uint16_t(data[1]);
+    return static_cast<int16_t>(val); // This cast will sign-extend if MSB is set
+}
+
+// For unsigned 16-bit
 static uint16_t bytesToUint16(const uint8_t* data) { return (uint16_t(data[0]) << 8) | uint16_t(data[1]); }
+
+// For signed 8-bit (this is safe, but explicit)
 static int8_t bytesToInt8(const uint8_t* data) { return static_cast<int8_t>(data[0]); }
+
+// For unsigned 8-bit
 static uint8_t bytesToUint8(const uint8_t* data) { return data[0]; }
+
+// Split a value into unsigned bytes (big-endian)
+inline void int16_to_bytes(uint16_t val, uint8_t* out)
+{
+    out[0] = (val >> 8) & 0xFF;
+    out[1] = (val) & 0xFF;
+}
+inline void int32_to_bytes(int32_t val, uint8_t* out)
+{
+    out[0] = (val >> 24) & 0xFF;
+    out[1] = (val >> 16) & 0xFF;
+    out[2] = (val >> 8) & 0xFF;
+    out[3] = (val) & 0xFF;
+}
+// For uint32_t
+inline void uint32_to_bytes(uint32_t val, uint8_t* out)
+{
+    out[0] = (val >> 24) & 0xFF;
+    out[1] = (val >> 16) & 0xFF;
+    out[2] = (val >> 8) & 0xFF;
+    out[3] = (val) & 0xFF;
+}
+// For 8-bit
+inline void int8_to_bytes(uint8_t val, uint8_t* out) { out[0] = val & 0xFF; }
 
 bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double timestamp, PiperMessage& msg)
 {
@@ -90,7 +126,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double times
         msg.type = ArmMsgType::GripperFeedback;
         msg.gripper_feedback.grippers_angle = bytesToInt32(&data[0]);
         msg.gripper_feedback.grippers_effort = bytesToInt16(&data[4]);
-        msg.gripper_feedback.status_code = data[6];
+        msg.gripper_feedback.status_code = bytesToUint8(&data[6]);
         msg.gripper_feedback.updateFocStatus();
         break;
 
@@ -133,31 +169,9 @@ bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double times
             low.vol = bytesToUint16(&data[0]);
             low.foc_temp = bytesToInt16(&data[2]);
             low.motor_temp = bytesToInt8(&data[4]);
-            low.foc_status_code = data[5];
+            low.foc_status_code = bytesToUint8(&data[5]);
             low.updateStatusFromCode();
             low.bus_current = bytesToUint16(&data[6]);
-        }
-        break;
-    }
-
-    // ----- Joint Vel/Acc Feedback (per joint) -----
-    case CanIDPiper::ARM_FEEDBACK_JOINT_VEL_ACC_1:
-    case CanIDPiper::ARM_FEEDBACK_JOINT_VEL_ACC_2:
-    case CanIDPiper::ARM_FEEDBACK_JOINT_VEL_ACC_3:
-    case CanIDPiper::ARM_FEEDBACK_JOINT_VEL_ACC_4:
-    case CanIDPiper::ARM_FEEDBACK_JOINT_VEL_ACC_5:
-    case CanIDPiper::ARM_FEEDBACK_JOINT_VEL_ACC_6:
-    {
-        size_t idx = static_cast<size_t>(can_enum_id) - static_cast<size_t>(CanIDPiper::ARM_FEEDBACK_JOINT_VEL_ACC_1);
-        if (idx < msg.joint_vel_accs.size())
-        {
-            msg.type = static_cast<ArmMsgType>(static_cast<int>(ArmMsgType::FeedbackJointVelAcc1) + idx);
-            auto& v = msg.joint_vel_accs[idx];
-            v.can_id = can_id;
-            v.end_linear_vel = bytesToUint16(&data[0]);
-            v.end_angular_vel = bytesToUint16(&data[2]);
-            v.end_linear_acc = bytesToUint16(&data[4]);
-            v.end_angular_acc = bytesToUint16(&data[6]);
         }
         break;
     }
@@ -203,25 +217,210 @@ bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double times
         msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num = data[0];
         msg.arm_feedback_current_motor_max_acc_limit.max_joint_acc = bytesToInt16(&data[1]);
         break;
+    // ----- Motion Control 2 -----
+    case CanIDPiper::ARM_MOTION_CTRL_2:
+    {
+        msg.type = ArmMsgType::MotionCtrl2;
+        // Example structure; update to match your C++ struct
+        msg.arm_motion_ctrl_2.ctrl_mode = data[0];
+        msg.arm_motion_ctrl_2.move_mode = data[1];
+        msg.arm_motion_ctrl_2.move_spd_rate_ctrl = data[2];
+        msg.arm_motion_ctrl_2.mit_mode = data[3];
+        msg.arm_motion_ctrl_2.residence_time = data[4];
+        break;
+    }
 
-        // ----- Control/Transmit messages (TODO) -----
-        // case CanIDPiper::ARM_MOTION_CTRL_2:
-        // case CanIDPiper::ARM_JOINT_CTRL_12:
-        // case CanIDPiper::ARM_JOINT_CTRL_34:
-        // case CanIDPiper::ARM_JOINT_CTRL_56:
-        // case CanIDPiper::ARM_GRIPPER_CTRL:
-        //     // TODO: Implement parsing for transmit/control messages when their C++ structs are defined.
-        //     break;
+    // ----- Joint Control 12 -----
+    case CanIDPiper::ARM_JOINT_CTRL_12:
+    {
+        msg.type = ArmMsgType::JointCtrl12;
+        msg.arm_joint_ctrl.joint_1 = bytesToInt32(&data[0]);
+        msg.arm_joint_ctrl.joint_2 = bytesToInt32(&data[4]);
+        break;
+    }
 
-        // ----- Firmware read -----
-        // case CanIDPiper::ARM_FIRMWARE_READ:
-        //     // TODO: Add a std::vector<uint8_t> or similar for firmware_data and assign it here.
-        //     break;
+    // ----- Joint Control 34 -----
+    case CanIDPiper::ARM_JOINT_CTRL_34:
+    {
+        msg.type = ArmMsgType::JointCtrl34;
+        msg.arm_joint_ctrl.joint_3 = bytesToInt32(&data[0]);
+        msg.arm_joint_ctrl.joint_4 = bytesToInt32(&data[4]);
+        break;
+    }
+
+    // ----- Joint Control 56 -----
+    case CanIDPiper::ARM_JOINT_CTRL_56:
+    {
+        msg.type = ArmMsgType::JointCtrl56;
+        msg.arm_joint_ctrl.joint_5 = bytesToInt32(&data[0]);
+        msg.arm_joint_ctrl.joint_6 = bytesToInt32(&data[4]);
+        break;
+    }
+
+    // ----- Gripper Control -----
+    case CanIDPiper::ARM_GRIPPER_CTRL:
+    {
+        msg.type = ArmMsgType::GripperCtrl;
+        msg.gripper_ctrl.grippers_angle = bytesToInt32(&data[0]);
+        msg.gripper_ctrl.grippers_effort = bytesToInt16(&data[4]);
+        msg.gripper_ctrl.status_code = bytesToUint8(&data[6]);
+        msg.gripper_ctrl.set_zero = bytesToUint8(&data[7]);
+        break;
+    }
+
+    // ----- Firmware Read -----
+    case CanIDPiper::ARM_FIRMWARE_READ:
+    {
+        msg.type = ArmMsgType::FirmwareRead;
+        // Firmware data is just raw; store in vector for easy use
+        msg.firmware_data.assign(data, data + PiperMessage::raw_data_len);
+        break;
+    }
 
     default:
-        return true;
+        printf("Unknown CAN ID: %u\n", can_id);
+        return false;
     }
     return true;
+}
+
+// Main function
+bool PiperParserV2::encodeMessage(const PiperMessage& msg, struct can_frame& tx_frame)
+{
+    using namespace std;
+    bool ret = true;
+    // Map from msg.type to CAN ID
+    tx_frame.can_id = msg.can_id;
+
+    // Clear data
+    memset(tx_frame.data, 0, 8);
+
+    switch (msg.type)
+    {
+    // --- Example: Motion Control 1 ---
+    case ArmMsgType::MotionCtrl1:
+    {
+        tx_frame.data[0] = msg.arm_motion_ctrl_1.emergency_stop;
+        tx_frame.data[1] = msg.arm_motion_ctrl_1.track_ctrl;
+        tx_frame.data[2] = msg.arm_motion_ctrl_1.grag_teach_ctrl;
+        // Last 5 bytes are zero
+        break;
+    }
+    // --- Motion Control 2 ---
+    case ArmMsgType::MotionCtrl2:
+    {
+        tx_frame.data[0] = msg.arm_motion_ctrl_2.ctrl_mode;
+        tx_frame.data[1] = msg.arm_motion_ctrl_2.move_mode;
+        tx_frame.data[2] = msg.arm_motion_ctrl_2.move_spd_rate_ctrl;
+        tx_frame.data[3] = msg.arm_motion_ctrl_2.mit_mode;
+        tx_frame.data[4] = msg.arm_motion_ctrl_2.residence_time;
+        tx_frame.data[5] = msg.arm_motion_ctrl_2.installation_pos;
+        // tx_frame.data[6], [7] zero
+        break;
+    }
+    // --- Cartesian Control 1/2/3 ---
+    case ArmMsgType::MotionCtrlCartesian1:
+    {
+        int32_to_bytes(msg.arm_motion_ctrl_cartesian.X_axis, &tx_frame.data[0]);
+        int32_to_bytes(msg.arm_motion_ctrl_cartesian.Y_axis, &tx_frame.data[4]);
+        break;
+    }
+    case ArmMsgType::MotionCtrlCartesian2:
+    {
+        int32_to_bytes(msg.arm_motion_ctrl_cartesian.Z_axis, &tx_frame.data[0]);
+        int32_to_bytes(msg.arm_motion_ctrl_cartesian.RX_axis, &tx_frame.data[4]);
+        break;
+    }
+    case ArmMsgType::MotionCtrlCartesian3:
+    {
+        int32_to_bytes(msg.arm_motion_ctrl_cartesian.RY_axis, &tx_frame.data[0]);
+        int32_to_bytes(msg.arm_motion_ctrl_cartesian.RZ_axis, &tx_frame.data[4]);
+        break;
+    }
+    // --- Joint Control 12/34/56 ---
+    case ArmMsgType::JointCtrl12:
+    {
+        int32_to_bytes(msg.arm_joint_ctrl.joint_1, &tx_frame.data[0]);
+        int32_to_bytes(msg.arm_joint_ctrl.joint_2, &tx_frame.data[4]);
+        break;
+    }
+    case ArmMsgType::JointCtrl34:
+    {
+        int32_to_bytes(msg.arm_joint_ctrl.joint_3, &tx_frame.data[0]);
+        int32_to_bytes(msg.arm_joint_ctrl.joint_4, &tx_frame.data[4]);
+        break;
+    }
+    case ArmMsgType::JointCtrl56:
+    {
+        int32_to_bytes(msg.arm_joint_ctrl.joint_5, &tx_frame.data[0]);
+        int32_to_bytes(msg.arm_joint_ctrl.joint_6, &tx_frame.data[4]);
+        break;
+    }
+    // --- Gripper Control ---
+    case ArmMsgType::GripperCtrl:
+    {
+        int32_to_bytes(msg.gripper_ctrl.grippers_angle, &tx_frame.data[0]);
+        int16_to_bytes(msg.gripper_ctrl.grippers_effort, &tx_frame.data[4]);
+        tx_frame.data[6] = msg.gripper_ctrl.status_code;
+        tx_frame.data[7] = msg.gripper_ctrl.set_zero;
+        break;
+    }
+    // --- MIT Joint Control, Single Joint ---
+    case ArmMsgType::JointMitCtrl1:
+    case ArmMsgType::JointMitCtrl2:
+    case ArmMsgType::JointMitCtrl3:
+    case ArmMsgType::JointMitCtrl4:
+    case ArmMsgType::JointMitCtrl5:
+    case ArmMsgType::JointMitCtrl6:
+    {
+        // Joint index: 0..5
+        size_t joint_idx = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::JointMitCtrl1);
+        const ArmMsgJointMitCtrl& mit = msg.arm_joint_mit_ctrl.motors[joint_idx];
+        // Unpack as Python:
+        // pos_ref: 16bit, vel_ref: 12bit, kp: 12bit, kd: 12bit, t_ref: 8bit (split), crc: 4bit
+        tx_frame.data[0] = (mit.pos_ref >> 8) & 0xFF;
+        tx_frame.data[1] = (mit.pos_ref) & 0xFF;
+        tx_frame.data[2] = (mit.vel_ref >> 4) & 0xFF;
+        tx_frame.data[3] = ((mit.vel_ref & 0xF) << 4) | ((mit.kp >> 8) & 0x0F);
+        tx_frame.data[4] = mit.kp & 0xFF;
+        tx_frame.data[5] = (mit.kd >> 4) & 0xFF;
+        tx_frame.data[6] = ((mit.kd & 0xF) << 4) | ((mit.t_ref >> 4) & 0x0F);
+        // CRC calculation is identical to Python:
+        uint8_t crc = (tx_frame.data[0] ^ tx_frame.data[1] ^ tx_frame.data[2] ^ tx_frame.data[3] ^ tx_frame.data[4] ^
+                       tx_frame.data[5] ^ tx_frame.data[6]) &
+                      0x0F;
+        // Store CRC back to struct for visibility if needed:
+        // const_cast<ArmMsgJointMitCtrl&>(mit).crc = crc;
+        tx_frame.data[7] = ((mit.t_ref & 0x0F) << 4) | (crc & 0x0F);
+        break;
+    }
+    // --- Master-Slave Config (example, add as needed) ---
+    case ArmMsgType::MasterSlaveModeConfig:
+    {
+        tx_frame.data[0] = msg.arm_ms_config.linkage_config;
+        tx_frame.data[1] = msg.arm_ms_config.feedback_offset;
+        tx_frame.data[2] = msg.arm_ms_config.ctrl_offset;
+        tx_frame.data[3] = msg.arm_ms_config.linkage_offset;
+        // [4-7] zero
+        break;
+    }
+    // --- Other cases: You can extend for the rest as in Python ---
+    // --- Firmware (just copy first 8 bytes of firmware_data vector) ---
+    case ArmMsgType::FirmwareRead:
+    {
+        std::fill(tx_frame.data, tx_frame.data + 8, 0);
+        for (size_t i = 0; i < std::min(msg.firmware_data.size(), size_t(8)); ++i)
+        {
+            tx_frame.data[i] = msg.firmware_data[i];
+        }
+        break;
+    }
+    // --- Add more cases as needed ---
+    default:
+        ret = false;
+        break;
+    }
+    return ret;
 }
 
 } // namespace piper_cpp

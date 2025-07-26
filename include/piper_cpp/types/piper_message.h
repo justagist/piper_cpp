@@ -1,8 +1,8 @@
 #pragma once
 
+#include "piper_cpp/types/common.h"
 #include "piper_cpp/types/core.h"
 #include "piper_cpp/types/feedback/arm_status.h"
-#include "piper_cpp/types/feedback/end_effector.h"
 #include "piper_cpp/types/feedback/gripper.h"
 #include "piper_cpp/types/feedback/joints.h"
 #include "piper_cpp/types/feedback/motors.h"
@@ -30,17 +30,17 @@ struct PiperMessage
 
     // ----------- Feedback messages -----------
     ArmMsgFeedbackStatus arm_status_msgs;
-    ArmMsgFeedbackEndPose arm_end_pose;
-    ArmMsgFeedbackJointStates arm_joint_feedback;
+    ArmMsgEndPose arm_end_pose;
+    ArmMsgJointValues arm_joint_feedback;
     ArmMsgFeedbackAllJointVelAcc all_joint_vel_acc;
     ArmMsgFeedbackGripper gripper_feedback;
-    ArmMsgFeedbackGripperTeachingPendantParam arm_gripper_teaching_param_feedback;
-    ArmMsgFeedbackCurrentEndVelAccParam arm_feedback_current_end_vel_acc_param;
-    ArmMsgFeedbackCurrentMotorAngleLimitMaxSpd arm_feedback_current_motor_angle_limit_max_spd;
-    ArmMsgFeedbackAllCurrentMotorAngleLimitMaxSpd all_motor_angle_limit_max_spd;
+    ArmMsgGripperTeachingPendantParam arm_gripper_teaching_param_feedback;
+    ArmMsgCurrentEndVelAccParam arm_feedback_current_end_vel_acc_param;
+    ArmMsgCurrentMotorAngleLimitMaxSpd arm_feedback_current_motor_angle_limit_max_spd;
+    ArmMsgAllCurrentMotorAngleLimitMaxSpd all_motor_angle_limit_max_spd;
     ArmMsgFeedbackCurrentMotorMaxAccLimit arm_feedback_current_motor_max_acc_limit;
     ArmMsgFeedbackAllCurrentMotorMaxAccLimit all_motor_max_acc_limit;
-    ArmMsgFeedbackCrashProtectionRating arm_crash_protection_rating_feedback;
+    ArmMsgCrashProtectionRatingConfig arm_crash_protection_rating_feedback;
 
     // High-speed feedback, 6 joints
     std::array<ArmMsgFeedbackHighSpd, num_joints> high_spd_feedbacks;
@@ -51,24 +51,23 @@ struct PiperMessage
 
     // ------------ Transmit messages ------------
     // TODO: Add transmit types as C++ structs.
-    // For example:
-    // ArmMsgMotionCtrl_1 arm_motion_ctrl_1;
-    // ArmMsgMotionCtrl_2 arm_motion_ctrl_2;
-    // ArmMsgMotionCtrlCartesian arm_motion_ctrl_cartesian;
-    // ArmMsgJointCtrl arm_joint_ctrl;
-    // ArmMsgCircularPatternCoordNumUpdateCtrl arm_circular_ctrl;
-    // ArmMsgGripperCtrl arm_gripper_ctrl;
-    // ArmMsgJointMitCtrl arm_joint_mit_ctrl;
-    // ArmMsgMasterSlaveModeConfig arm_ms_config;
-    // ArmMsgMotorEnableDisableConfig arm_motor_enable;
-    // ArmMsgSearchMotorMaxAngleSpdAccLimit arm_search_motor_max_angle_spd_acc_limit;
-    // ArmMsgMotorAngleLimitMaxSpdSet arm_motor_angle_limit_max_spd_set;
-    // ArmMsgJointConfig arm_joint_config;
-    // ArmMsgInstructionResponseConfig arm_set_instruction_response;
-    // ArmMsgParamEnquiryAndConfig arm_param_enquiry_and_config;
-    // ArmMsgEndVelAccParamConfig arm_end_vel_acc_param_config;
-    // ArmMsgCrashProtectionRatingConfig arm_crash_protection_rating_config;
-    // ArmMsgGripperTeachingPendantParamConfig arm_gripper_teaching_param_config;
+    ArmMsgMotionCtrl_1 arm_motion_ctrl_1;
+    ArmMsgMotionCtrl_2 arm_motion_ctrl_2;
+    ArmMsgEndPose arm_motion_ctrl_cartesian;
+    ArmMsgJointValues arm_joint_ctrl;
+    ArmMsgCircularPatternCoordNumUpdateCtrl arm_circular_ctrl;
+    ArmMsgGripperCtrl gripper_ctrl;
+    ArmMsgAllJointMitCtrl arm_joint_mit_ctrl;
+    ArmMsgMasterSlaveModeConfig arm_ms_config;
+    ArmMsgMotorEnableDisableConfig arm_motor_enable;
+    ArmMsgSearchMotorMaxAngleSpdAccLimit arm_search_motor_max_angle_spd_acc_limit;
+    ArmMsgCurrentMotorAngleLimitMaxSpd arm_motor_angle_limit_max_spd_set;
+    ArmMsgJointConfig arm_joint_config;
+    ArmMsgInstructionResponseConfig arm_set_instruction_response;
+    ArmMsgParamEnquiryAndConfig arm_param_enquiry_and_config;
+    ArmMsgCurrentEndVelAccParam arm_end_vel_acc_param_config;
+    ArmMsgCrashProtectionRatingConfig arm_crash_protection_rating_config;
+    ArmMsgGripperTeachingPendantParam arm_gripper_teaching_param_config;
 
     std::vector<uint8_t> firmware_data; // for firmware binary
 
