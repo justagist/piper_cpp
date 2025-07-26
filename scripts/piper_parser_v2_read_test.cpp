@@ -34,11 +34,11 @@ int main(int argc, char* argv[])
             std::cout << StdCanInterface::getCanPortInfo(port) << std::endl;
         }
 
+        PiperMessage msg;
         StdCanInterface can(
             "can0", 1000000, true, true,
-            [&parser](const struct can_frame& frame, double timestamp)
+            [&parser, &msg](const struct can_frame& frame, double timestamp)
             {
-                PiperMessage msg;
                 if (parser->decodeMessage(frame, timestamp, msg))
                 {
                     std::cout << "[Callback] Received CAN frame: ID=0x" << std::hex << msg.can_id
@@ -50,11 +50,7 @@ int main(int argc, char* argv[])
                     std::cout << std::dec << " DLC=" << msg.raw_data_len;
                     std::cout << std::fixed << std::setprecision(6) << " Timestamp=" << msg.timestamp << "s";
                     std::cout << std::endl;
-                    if (msg.type == ArmMsgType::StatusFeedback)
-                    {
-                        std::cout << "Decoded Message: " << std::endl;
-                        std::cout << msg.arm_status_msgs.toString() << std::endl;
-                    }
+                    std::cout << msg.toString() << std::endl;
                 }
                 else
                 {
