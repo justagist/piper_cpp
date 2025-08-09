@@ -4,7 +4,6 @@
 #include <numeric>
 #include <sstream>
 
-
 namespace piper_cpp
 {
 
@@ -19,12 +18,18 @@ public:
         setNumCallers(1); // Default to 1 caller
     }
 
-    void setNumCallers(int num_callers)
+    void setNumCallers(size_t num_callers)
     {
         std::lock_guard<std::mutex> lk(mutex_);
         last_timestamp_.resize(num_callers, 0.0);
         initialized_.resize(num_callers, false);
         hz_.resize(num_callers, 0.0);
+    }
+
+    size_t getNumCallers() const
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        return static_cast<size_t>(last_timestamp_.size());
     }
 
     /// Atomically replace the contained value, and update timestamp/hz.

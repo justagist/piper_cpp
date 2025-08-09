@@ -70,23 +70,5 @@ struct ArmMsgFeedbackGripper
     }
 };
 
-struct ArmMsgFeedbackGripperTeachingPendantParam
-{
-    uint8_t teaching_range_per{0}; // [100,200] %, default 100%
-    uint8_t max_range_config{0};   // [0,70,100] mm
-    uint8_t teaching_friction{0};  // [1,10]
-    // bytes 3~7 are reserved
-
-    std::string toString() const
-    {
-        std::ostringstream oss;
-        oss << "ArmMsgFeedbackGripperTeachingPendantParam(\n"
-            << "  teaching_range_per: " << int(teaching_range_per) << "\n"
-            << "  max_range_config: " << int(max_range_config) << "\n"
-            << "  teaching_friction: " << int(teaching_friction) << "\n"
-            << ")";
-        return oss.str();
-    }
-};
 
 } // namespace piper_cpp

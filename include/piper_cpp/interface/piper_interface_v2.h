@@ -9,13 +9,12 @@
 #include <unordered_map>
 #include <vector>
 
-// Forward declarations of your protocol classes:
-#include "piper_cpp/fk.h"                // FK
-#include "piper_cpp/std_can_interface.h" // CAN wrapper
-// #include "C_PiperParamManager.h"      // param manager
+#include "piper_cpp/fk.h"
 #include "piper_cpp/interface/timed_freq_state.h"
-#include "piper_cpp/protocol/piper_parser_base.h" // abstract base parser
-#include "piper_cpp/types/types.h"                //  message struct
+#include "piper_cpp/piper_params.h"
+#include "piper_cpp/protocol/piper_parser_base.h"
+#include "piper_cpp/std_can_interface.h"
+#include "piper_cpp/types/types.h"
 
 namespace piper_cpp
 {
@@ -51,6 +50,20 @@ public:
 
     StateSnapShot<ArmMsgJointValues> getArmJointStates() const { return StateSnapShot(arm_joint_states_); }
 
+    StateSnapShot<ArmMsgFeedbackGripper> getArmGripperStates() const { return StateSnapShot(arm_gripper_msgs_); }
+
+    StateSnapShot<std::array<ArmMsgFeedbackHighSpd, 6>> getArmHighSpeedFeedbacks() const
+    {
+        return StateSnapShot(arm_high_spd_fb_);
+    }
+
+    StateSnapShot<std::array<ArmMsgFeedbackLowSpd, 6>> getArmLowSpeedFeedbacks() const
+    {
+        return StateSnapShot(arm_low_spd_fb_);
+    }
+
+    PiperParamManager& getParameterManager() const { return PiperParamManager::instance(); }
+
 private:
     /// High‐resolution timestamp in seconds
     static double getCurrentTime()
@@ -67,6 +80,8 @@ private:
     std::unique_ptr<PiperForwardKinematics> fk_;
     std::unique_ptr<StdCanInterface> arm_can_;
 
+    bool sdk_joint_limit_{false}, sdk_gripper_limit_{false};
+
     std::atomic<bool> connected_{false};
     std::atomic<bool> start_fk_cal_{false};
 
@@ -76,8 +91,9 @@ private:
     TimedFreqState<ArmMsgFeedbackStatus> arm_status_;
     TimedFreqState<ArmMsgEndPose> arm_end_pose_;
     TimedFreqState<ArmMsgJointValues> arm_joint_states_;
-    //   TimedFreqState<ArmMsgFeedbackHighSpd>          armHighSpd_[6];
-    //   TimedFreqState<ArmMsgFeedbackLowSpd>           armLowSpd_[6];
+    TimedFreqState<ArmMsgFeedbackGripper> arm_gripper_msgs_;
+    TimedFreqState<std::array<ArmMsgFeedbackHighSpd, 6>> arm_high_spd_fb_;
+    TimedFreqState<std::array<ArmMsgFeedbackLowSpd, 6>> arm_low_spd_fb_;
 
     // Internal helper threads
     void readLoop();

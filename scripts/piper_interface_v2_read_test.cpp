@@ -47,6 +47,33 @@ int main()
                   << "  j4=" << jointsSnap.value.joint_4 << "  j5=" << jointsSnap.value.joint_5
                   << "  j6=" << jointsSnap.value.joint_6 << "\n";
 
+        // d) gripper states
+        auto gripperSnap = piper.getArmGripperStates();
+        std::cout << std::fixed << std::setprecision(6) << "[Gripper]  t=" << gripperSnap.timestamp
+                  << "  hz=" << gripperSnap.hz << "  angle=" << gripperSnap.value.grippers_angle
+                  << " effort=" << gripperSnap.value.grippers_effort
+                  << " foc:" << gripperSnap.value.foc_status.toString() << "\n";
+
+        // e) high spd feedback
+        auto high_spd_fb = piper.getArmHighSpeedFeedbacks();
+        std::cout << std::fixed << std::setprecision(6) << "[HighSpd]  t=" << high_spd_fb.timestamp
+                  << "  hz=" << high_spd_fb.hz;
+        for (size_t i = 0; i < high_spd_fb.value.size(); ++i)
+        {
+            std::cout << "  j" << (i + 1) << "=" << high_spd_fb.value[i].toString();
+        }
+        std::cout << "\n";
+
+        // f) low spd feedback
+        auto low_spd_fb = piper.getArmLowSpeedFeedbacks();
+        std::cout << std::fixed << std::setprecision(6) << "[LowSpd]  t=" << low_spd_fb.timestamp
+                  << "  hz=" << low_spd_fb.hz;
+        for (size_t i = 0; i < low_spd_fb.value.size(); ++i)
+        {
+            std::cout << "  j" << (i + 1) << "=" << low_spd_fb.value[i].toString();
+        }
+        std::cout << "\n";
+
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 

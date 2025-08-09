@@ -8,7 +8,8 @@ namespace piper_cpp
 PiperInterfaceV2::PiperInterfaceV2(
     std::string can_name, bool judge_flag, bool auto_init, bool dh_offset, bool sdk_joint_limit, bool sdk_gripper_limit
 )
-    : can_name_(std::move(can_name)), start_fk_cal_(false)
+    : can_name_(std::move(can_name)), start_fk_cal_(false), sdk_joint_limit_(sdk_joint_limit),
+      sdk_gripper_limit_(sdk_gripper_limit)
 {
     // Initialize parser and other members here
     parser_ = std::make_unique<PiperParserV2>();
@@ -21,6 +22,9 @@ PiperInterfaceV2::PiperInterfaceV2(
     arm_status_.setNumCallers(1);
     arm_end_pose_.setNumCallers(3);     // end pose is updated in 3 parts
     arm_joint_states_.setNumCallers(3); // joint states are updated in 3 parts
+    arm_gripper_msgs_.setNumCallers(1);
+    arm_high_spd_fb_.setNumCallers(6); // 6 joints for high-speed feedback
+    arm_low_spd_fb_.setNumCallers(6);  // 6 joints for low-speed feedback
 
     /// TODO: initialise other members as in python
 }
@@ -111,6 +115,7 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame& frame, double times
     PiperMessage msg;
     if (parser_->decodeMessage(frame, timestamp, msg))
     {
+        auto& pm = getParameterManager();
         switch (msg.type)
         {
         case ArmMsgType::StatusFeedback:
@@ -143,25 +148,115 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame& frame, double times
         case ArmMsgType::JointFeedback12:
         {
             auto joint_values = arm_joint_states_.getValue();
-            joint_values.joint_1 = msg.arm_joint_feedback.joint_1;
-            joint_values.joint_2 = msg.arm_joint_feedback.joint_2;
+            if (sdk_joint_limit_)
+            {
+                joint_values.joint_1 =
+                    pm.clampJointMilliDeg(PiperParamManager::Joint::J1, msg.arm_joint_feedback.joint_1);
+                joint_values.joint_2 =
+                    pm.clampJointMilliDeg(PiperParamManager::Joint::J2, msg.arm_joint_feedback.joint_2);
+            }
+            else
+            {
+                joint_values.joint_1 = msg.arm_joint_feedback.joint_1;
+                joint_values.joint_2 = msg.arm_joint_feedback.joint_2;
+            }
             arm_joint_states_.set(joint_values, msg.timestamp, 0);
             break;
         }
         case ArmMsgType::JointFeedback34:
         {
             auto joint_values = arm_joint_states_.getValue();
-            joint_values.joint_3 = msg.arm_joint_feedback.joint_3;
-            joint_values.joint_4 = msg.arm_joint_feedback.joint_4;
+            if (sdk_joint_limit_)
+            {
+                joint_values.joint_3 =
+                    pm.clampJointMilliDeg(PiperParamManager::Joint::J3, msg.arm_joint_feedback.joint_3);
+                joint_values.joint_4 =
+                    pm.clampJointMilliDeg(PiperParamManager::Joint::J4, msg.arm_joint_feedback.joint_4);
+            }
+            else
+            {
+                joint_values.joint_3 = msg.arm_joint_feedback.joint_3;
+                joint_values.joint_4 = msg.arm_joint_feedback.joint_4;
+            }
             arm_joint_states_.set(joint_values, msg.timestamp, 1);
             break;
         }
         case ArmMsgType::JointFeedback56:
         {
             auto joint_values = arm_joint_states_.getValue();
-            joint_values.joint_5 = msg.arm_joint_feedback.joint_5;
-            joint_values.joint_6 = msg.arm_joint_feedback.joint_6;
+            if (sdk_joint_limit_)
+            {
+                joint_values.joint_5 =
+                    pm.clampJointMilliDeg(PiperParamManager::Joint::J5, msg.arm_joint_feedback.joint_5);
+                joint_values.joint_6 =
+                    pm.clampJointMilliDeg(PiperParamManager::Joint::J6, msg.arm_joint_feedback.joint_6);
+            }
+            else
+            {
+                joint_values.joint_5 = msg.arm_joint_feedback.joint_5;
+                joint_values.joint_6 = msg.arm_joint_feedback.joint_6;
+            }
             arm_joint_states_.set(joint_values, msg.timestamp, 2);
+            break;
+        }
+        case ArmMsgType::GripperFeedback:
+        {
+            // Update gripper messages
+            auto gripper_fb = msg.gripper_feedback;
+            if (sdk_gripper_limit_)
+            {
+                gripper_fb.grippers_angle = pm.clampGripperMicrometers(gripper_fb.grippers_angle);
+            }
+            arm_gripper_msgs_.set(gripper_fb, msg.timestamp);
+            break;
+        }
+        case ArmMsgType::HighSpdFeed1:
+        case ArmMsgType::HighSpdFeed2:
+        case ArmMsgType::HighSpdFeed3:
+        case ArmMsgType::HighSpdFeed4:
+        case ArmMsgType::HighSpdFeed5:
+        case ArmMsgType::HighSpdFeed6:
+        {
+            // Update high-speed feedback for each joint
+            size_t joint_index = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::HighSpdFeed1);
+            if (joint_index < arm_high_spd_fb_.getNumCallers())
+            {
+                auto high_spd_fb = arm_high_spd_fb_.getValue();
+                high_spd_fb[joint_index] = msg.high_spd_feedbacks[joint_index];
+                arm_high_spd_fb_.set(high_spd_fb, msg.timestamp, joint_index);
+            }
+            else
+            {
+                // Handle unexpected joint index
+                std::cerr << "Error: Invalid joint index (or joint index could not be inferred correctly) for "
+                             "high-speed feedback: "
+                          << joint_index << "\n";
+            }
+            break;
+        }
+        case ArmMsgType::LowSpdFeed1:
+        case ArmMsgType::LowSpdFeed2:
+        case ArmMsgType::LowSpdFeed3:
+        case ArmMsgType::LowSpdFeed4:
+        case ArmMsgType::LowSpdFeed5:
+        case ArmMsgType::LowSpdFeed6:
+        {
+            // Update low speed feedback for each joint
+            // Update high-speed feedback for each joint
+            size_t joint_index = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::LowSpdFeed1);
+            if (joint_index < arm_low_spd_fb_.getNumCallers())
+            {
+                auto low_spd_fb = arm_low_spd_fb_.getValue();
+                low_spd_fb[joint_index] = msg.low_spd_feedbacks[joint_index];
+                arm_low_spd_fb_.set(low_spd_fb, msg.timestamp, joint_index);
+            }
+            else
+            {
+                // Handle unexpected joint index
+                std::cerr << "Error: Invalid joint index (or joint index could not be inferred correctly) for "
+                             "low-speed feedback: "
+                          << joint_index << "\n";
+            }
             break;
         }
 
