@@ -12,7 +12,7 @@ int main()
 
     // 2) Try to open port, start threads, send init queries:
     if (!piper.connectPort(
-            /*can_init=*/false,
+            /*can_init=*/true,
             /*piper_init=*/true,
             /*start_threads=*/true
         ))
@@ -26,53 +26,85 @@ int main()
     // 3) Run a 10 s loop, polling every 500 ms:
     for (int i = 0; i < 20; ++i)
     {
-        // a) Arm status
-        auto statusSnap = piper.getArmStatus();
-        std::cout << std::fixed << std::setprecision(6) << "[Status]   t=" << statusSnap.timestamp
-                  << "  hz=" << statusSnap.hz << "  ctrl_mode=" << int(statusSnap.value.ctrl_mode)
-                  << "  err_code=" << statusSnap.value.err_code << "\n";
+        // 1) Arm status
+        auto status = piper.getArmStatus();
+        std::cout << std::fixed << std::setprecision(6) << status.toString() << std::endl;
 
-        // b) End‐pose
-        auto poseSnap = piper.getArmEndPose();
-        std::cout << std::fixed << std::setprecision(6) << "[EndPose]  t=" << poseSnap.timestamp
-                  << "  hz=" << poseSnap.hz << "  X=" << poseSnap.value.X_axis << "  Y=" << poseSnap.value.Y_axis
-                  << "  Z=" << poseSnap.value.Z_axis << "  RX=" << poseSnap.value.RX_axis
-                  << "  RY=" << poseSnap.value.RY_axis << "  RZ=" << poseSnap.value.RZ_axis << "\n";
+        // 2) End‐pose
+        auto pose = piper.getArmEndPose();
+        std::cout << std::fixed << std::setprecision(6) << pose.toString() << std::endl;
 
-        // c) Joint angles
-        auto jointsSnap = piper.getArmJointStates();
-        std::cout << std::fixed << std::setprecision(6) << "[Joints]   t=" << jointsSnap.timestamp
-                  << "  hz=" << jointsSnap.hz << "  j1=" << jointsSnap.value.joint_1
-                  << "  j2=" << jointsSnap.value.joint_2 << "  j3=" << jointsSnap.value.joint_3
-                  << "  j4=" << jointsSnap.value.joint_4 << "  j5=" << jointsSnap.value.joint_5
-                  << "  j6=" << jointsSnap.value.joint_6 << "\n";
+        // 3) Joint angles
+        auto joints = piper.getArmJointStates();
+        std::cout << std::fixed << std::setprecision(6) << joints.toString() << std::endl;
 
-        // d) gripper states
-        auto gripperSnap = piper.getArmGripperStates();
-        std::cout << std::fixed << std::setprecision(6) << "[Gripper]  t=" << gripperSnap.timestamp
-                  << "  hz=" << gripperSnap.hz << "  angle=" << gripperSnap.value.grippers_angle
-                  << " effort=" << gripperSnap.value.grippers_effort
-                  << " foc:" << gripperSnap.value.foc_status.toString() << "\n";
+        // 4) gripper states
+        auto gripper = piper.getGripperStates();
+        std::cout << std::fixed << std::setprecision(6) << gripper.toString() << std::endl;
 
-        // e) high spd feedback
+        // 5) high spd feedback
         auto high_spd_fb = piper.getArmHighSpeedFeedbacks();
-        std::cout << std::fixed << std::setprecision(6) << "[HighSpd]  t=" << high_spd_fb.timestamp
-                  << "  hz=" << high_spd_fb.hz;
-        for (size_t i = 0; i < high_spd_fb.value.size(); ++i)
-        {
-            std::cout << "  j" << (i + 1) << "=" << high_spd_fb.value[i].toString();
-        }
-        std::cout << "\n";
+        std::cout << std::fixed << std::setprecision(6) << high_spd_fb.toString() << std::endl;
 
-        // f) low spd feedback
+        // 6) low spd feedback
         auto low_spd_fb = piper.getArmLowSpeedFeedbacks();
-        std::cout << std::fixed << std::setprecision(6) << "[LowSpd]  t=" << low_spd_fb.timestamp
-                  << "  hz=" << low_spd_fb.hz;
-        for (size_t i = 0; i < low_spd_fb.value.size(); ++i)
+        std::cout << std::fixed << std::setprecision(6) << low_spd_fb.toString() << std::endl;
+
+        // 7) current end velocity and acceleration
+        auto end_vel_acc = piper.getArmCurrentEndVelAcc();
+        std::cout << std::fixed << std::setprecision(6) << end_vel_acc.toString() << std::endl;
+
+        // 8) crash protection rating fb
+        auto crash_protection_rating_fb = piper.getArmCrashProtectionRating();
+        std::cout << std::fixed << std::setprecision(6) << crash_protection_rating_fb.toString() << std::endl;
+
+        // 9) gripper teaching pendant fb
+        auto gripper_teaching_pendant_fb = piper.getGripperTeachingPendantParamFeedback();
+        std::cout << std::fixed << std::setprecision(6) << gripper_teaching_pendant_fb.toString() << std::endl;
+
+        // 10) current motor angle limit max speed
+        auto current_motor_angle_limit_max_spd = piper.getArmCurrentMotorAngleLimitMaxSpd();
+        std::cout << std::fixed << std::setprecision(6) << current_motor_angle_limit_max_spd.toString() << std::endl;
+
+        // 11) current motor max acc limit
+        auto current_motor_max_acc_limit = piper.getArmCurrentMotorMaxAccLimit();
+        std::cout << std::fixed << std::setprecision(6) << current_motor_max_acc_limit.toString() << std::endl;
+
+        // 12) all motor angle limit max speed
+        auto all_motor_angle_limit_max_spd = piper.getArmAllMotorAngleLimitMaxSpd();
+        std::cout << std::fixed << std::setprecision(6) << all_motor_angle_limit_max_spd.toString() << std::endl;
+
+        // 13) all motor max acc limit
+        auto all_motor_max_acc_limit = piper.getArmAllMotorMaxAccLimit();
+        std::cout << std::fixed << std::setprecision(6) << all_motor_max_acc_limit.toString() << std::endl;
+
+        // 14) joint ctrl msgs
+        auto joint_ctrl_msgs = piper.getArmJointCtrlMsgs();
+        std::cout << std::fixed << std::setprecision(6) << joint_ctrl_msgs.toString() << std::endl;
+
+        // 15) gripper ctrl msgs
+        auto gripper_ctrl_msgs = piper.getArmGripperCtrlMsgs();
+        std::cout << std::fixed << std::setprecision(6) << gripper_ctrl_msgs.toString() << std::endl;
+
+        // 16) motion ctrl code 151 (motion control 2)
+        auto motion_ctrl_code_151 = piper.getArmMotionCtrlCode151();
+        std::cout << std::fixed << std::setprecision(6) << motion_ctrl_code_151.toString() << std::endl;
+
+        // 17) calculated fb FK
+        auto fb_fk = piper.getCalculatedFeedbackFK();
+        for (const auto& fk : fb_fk)
         {
-            std::cout << "  j" << (i + 1) << "=" << low_spd_fb.value[i].toString();
+            std::cout << std::fixed << std::setprecision(6) << "FK: " << fk[0] << ", " << fk[1] << ", " << fk[2] << ", "
+                      << fk[3] << ", " << fk[4] << ", " << fk[5] << std::endl;
         }
-        std::cout << "\n";
+
+        // 18) calculated Ctrl FK
+        auto ctrl_fk = piper.getCalculatedControlFK();
+        for (const auto& fk : ctrl_fk)
+        {
+            std::cout << std::fixed << std::setprecision(6) << "Ctrl FK: " << fk[0] << ", " << fk[1] << ", " << fk[2]
+                      << ", " << fk[3] << ", " << fk[4] << ", " << fk[5] << std::endl;
+        }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }

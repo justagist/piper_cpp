@@ -99,7 +99,7 @@ struct ArmMsgGripperTeachingPendantParam
 
 struct ArmMsgCurrentMotorAngleLimitMaxSpd
 {
-    uint8_t motor_num{0};       // Joint motor number [1..6]
+    uint8_t motor_num{0};       // Joint motor number [0..5]
     int16_t max_angle_limit{0}; // Maximum angle limit (0.1 deg)
     int16_t min_angle_limit{0}; // Minimum angle limit (0.1 deg)
     int16_t max_joint_spd{0};   // Maximum joint speed (0.001 rad/s)
@@ -117,21 +117,21 @@ struct ArmMsgCurrentMotorAngleLimitMaxSpd
     }
 };
 
-// Container for all 6 motors' angle/speed feedback (indexed from 1 to 6)
+// Container for all 6 motors' angle/speed feedback (indexed from 0 to 5)
 struct ArmMsgAllCurrentMotorAngleLimitMaxSpd
 {
-    ArmMsgCurrentMotorAngleLimitMaxSpd motor[7]; // 0 unused, 1~6 valid
+    ArmMsgCurrentMotorAngleLimitMaxSpd motor[6];
 
     ArmMsgAllCurrentMotorAngleLimitMaxSpd()
     {
-        for (int i = 0; i < 7; ++i)
+        for (int i = 0; i < 6; ++i)
             motor[i] = ArmMsgCurrentMotorAngleLimitMaxSpd{};
     }
 
     std::string toString() const
     {
         std::ostringstream oss;
-        for (int i = 1; i <= 6; ++i)
+        for (int i = 0; i <= 5; ++i)
             oss << motor[i].toString() << "\n";
         return oss.str();
     }

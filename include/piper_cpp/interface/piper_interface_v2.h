@@ -39,28 +39,74 @@ public:
     /// Send the three "search" commands for joint limits, acc limits, firmware.
     void piperInit();
 
-    /// Turn on/off FK‐calculation in the message loop
-    void enableFkCal() { start_fk_cal_.store(true, std::memory_order_relaxed); }
-    void disableFkCal() { start_fk_cal_.store(false, std::memory_order_relaxed); }
-    bool isCalFk() const { return start_fk_cal_.load(std::memory_order_relaxed); }
+    StateSnapshot<ArmMsgFeedbackStatus> getArmStatus() const { return StateSnapshot(arm_status_); }
 
-    StateSnapShot<ArmMsgFeedbackStatus> getArmStatus() const { return StateSnapShot(arm_status_); }
+    StateSnapshot<ArmMsgEndPose> getArmEndPose() const { return StateSnapshot(arm_end_pose_); }
 
-    StateSnapShot<ArmMsgEndPose> getArmEndPose() const { return StateSnapShot(arm_end_pose_); }
+    StateSnapshot<ArmMsgJointValues> getArmJointStates() const { return StateSnapshot(arm_joint_states_); }
 
-    StateSnapShot<ArmMsgJointValues> getArmJointStates() const { return StateSnapShot(arm_joint_states_); }
+    StateSnapshot<ArmMsgFeedbackGripper> getGripperStates() const { return StateSnapshot(arm_gripper_msgs_); }
 
-    StateSnapShot<ArmMsgFeedbackGripper> getArmGripperStates() const { return StateSnapShot(arm_gripper_msgs_); }
-
-    StateSnapShot<std::array<ArmMsgFeedbackHighSpd, 6>> getArmHighSpeedFeedbacks() const
+    StateSnapshot<ArmMsgFeedbackHighSpdArray> getArmHighSpeedFeedbacks() const
     {
-        return StateSnapShot(arm_high_spd_fb_);
+        return StateSnapshot(arm_high_spd_fb_);
     }
 
-    StateSnapShot<std::array<ArmMsgFeedbackLowSpd, 6>> getArmLowSpeedFeedbacks() const
+    StateSnapshot<ArmMsgFeedbackLowSpdArray> getArmLowSpeedFeedbacks() const { return StateSnapshot(arm_low_spd_fb_); }
+
+    StateSnapshot<ArmMsgCurrentEndVelAccParam> getArmCurrentEndVelAcc() const
     {
-        return StateSnapShot(arm_low_spd_fb_);
+        return StateSnapshot(arm_current_end_vel_acc_);
     }
+
+    StateSnapshot<ArmMsgCrashProtectionRatingConfig> getArmCrashProtectionRating() const
+    {
+        return StateSnapshot(arm_crash_protection_rating_fb_);
+    }
+
+    StateSnapshot<ArmMsgGripperTeachingPendantParam> getGripperTeachingPendantParamFeedback() const
+    {
+        return StateSnapshot(arm_gripper_teaching_pendant_fb_);
+    }
+
+    StateSnapshot<ArmMsgCurrentMotorAngleLimitMaxSpd> getArmCurrentMotorAngleLimitMaxSpd() const
+    {
+        return StateSnapshot(arm_current_motor_angle_limit_max_spd_);
+    }
+
+    StateSnapshot<ArmMsgFeedbackCurrentMotorMaxAccLimit> getArmCurrentMotorMaxAccLimit() const
+    {
+        return StateSnapshot(arm_current_motor_max_acc_limit_);
+    }
+
+    StateSnapshot<ArmMsgAllCurrentMotorAngleLimitMaxSpd> getArmAllMotorAngleLimitMaxSpd() const
+    {
+        return StateSnapshot(arm_all_motor_angle_limit_max_spd_);
+    }
+
+    StateSnapshot<ArmMsgFeedbackAllCurrentMotorMaxAccLimit> getArmAllMotorMaxAccLimit() const
+    {
+        return StateSnapshot(arm_all_motor_max_acc_limit_);
+    }
+
+    StateSnapshot<ArmMsgJointValues> getArmJointCtrlMsgs() const { return StateSnapshot(arm_joint_ctrl_msgs_); }
+
+    StateSnapshot<ArmMsgGripperCtrl> getArmGripperCtrlMsgs() const { return StateSnapshot(arm_gripper_ctrl_); }
+
+    StateSnapshot<ArmMsgMotionCtrl_2> getArmMotionCtrlCode151() const
+    {
+        return StateSnapshot(arm_motion_ctrl_code_151_);
+    }
+
+    std::vector<uint8_t> getFirmwareData() const
+    {
+        std::lock_guard<std::mutex> lock(firmware_data_mutex_);
+        return firmware_data_;
+    }
+
+    std::vector<std::array<double, 6>> getCalculatedFeedbackFK() const;
+
+    std::vector<std::array<double, 6>> getCalculatedControlFK() const;
 
     PiperParamManager& getParameterManager() const { return PiperParamManager::instance(); }
 
@@ -83,7 +129,6 @@ private:
     bool sdk_joint_limit_{false}, sdk_gripper_limit_{false};
 
     std::atomic<bool> connected_{false};
-    std::atomic<bool> start_fk_cal_{false};
 
     std::thread read_thread_, monitor_thread_;
     std::atomic<bool> stop_read_{false}, stop_monitor_{false};
@@ -92,8 +137,25 @@ private:
     TimedFreqState<ArmMsgEndPose> arm_end_pose_;
     TimedFreqState<ArmMsgJointValues> arm_joint_states_;
     TimedFreqState<ArmMsgFeedbackGripper> arm_gripper_msgs_;
-    TimedFreqState<std::array<ArmMsgFeedbackHighSpd, 6>> arm_high_spd_fb_;
-    TimedFreqState<std::array<ArmMsgFeedbackLowSpd, 6>> arm_low_spd_fb_;
+    TimedFreqState<ArmMsgFeedbackHighSpdArray> arm_high_spd_fb_;
+    TimedFreqState<ArmMsgFeedbackLowSpdArray> arm_low_spd_fb_;
+    TimedFreqState<ArmMsgCurrentEndVelAccParam> arm_current_end_vel_acc_;
+    TimedFreqState<ArmMsgCrashProtectionRatingConfig> arm_crash_protection_rating_fb_;
+    TimedFreqState<ArmMsgGripperTeachingPendantParam> arm_gripper_teaching_pendant_fb_;
+    TimedFreqState<ArmMsgCurrentMotorAngleLimitMaxSpd> arm_current_motor_angle_limit_max_spd_;
+    TimedFreqState<ArmMsgFeedbackCurrentMotorMaxAccLimit> arm_current_motor_max_acc_limit_;
+    TimedFreqState<ArmMsgAllCurrentMotorAngleLimitMaxSpd> arm_all_motor_angle_limit_max_spd_;
+    TimedFreqState<ArmMsgFeedbackAllCurrentMotorMaxAccLimit> arm_all_motor_max_acc_limit_;
+    TimedFreqState<ArmMsgJointValues> arm_joint_ctrl_msgs_;
+    TimedFreqState<ArmMsgGripperCtrl> arm_gripper_ctrl_;
+    TimedFreqState<ArmMsgMotionCtrl_2> arm_motion_ctrl_code_151_;
+
+    std::vector<uint8_t> firmware_data_;
+    mutable std::mutex firmware_data_mutex_;
+
+    void updateFeedbackFK();
+
+    void updateCtrlFK();
 
     // Internal helper threads
     void readLoop();

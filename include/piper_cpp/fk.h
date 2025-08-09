@@ -55,14 +55,14 @@ public:
         Mat4 R05 = piper_utils::matMultiply(R04, Ts[4]);
         Mat4 R06 = piper_utils::matMultiply(R05, Ts[5]);
 
-        std::vector<std::array<double, 6>> j_pos;
-        j_pos.push_back(piper_utils::matrixToEuler(Ts[0]));
-        j_pos.push_back(piper_utils::matrixToEuler(R02));
-        j_pos.push_back(piper_utils::matrixToEuler(R03));
-        j_pos.push_back(piper_utils::matrixToEuler(R04));
-        j_pos.push_back(piper_utils::matrixToEuler(R05));
-        j_pos.push_back(piper_utils::matrixToEuler(R06));
-        return j_pos;
+        std::vector<std::array<double, 6>> l_pose;
+        l_pose.push_back(piper_utils::matrixToEuler(Ts[0]));
+        l_pose.push_back(piper_utils::matrixToEuler(R02));
+        l_pose.push_back(piper_utils::matrixToEuler(R03));
+        l_pose.push_back(piper_utils::matrixToEuler(R04));
+        l_pose.push_back(piper_utils::matrixToEuler(R05));
+        l_pose.push_back(piper_utils::matrixToEuler(R06));
+        return l_pose;
     }
 
 private:

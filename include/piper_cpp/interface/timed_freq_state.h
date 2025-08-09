@@ -1,4 +1,6 @@
 #pragma once
+
+#include <algorithm>
 #include <chrono>
 #include <mutex>
 #include <numeric>
@@ -51,6 +53,13 @@ public:
         initialized_.at(caller_id) = true;
     }
 
+    bool isValid() const
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        return initialized_.size() > 0 &&
+               std::any_of(initialized_.begin(), initialized_.end(), [](bool init) { return init; });
+    }
+
     /// Atomically read out the payload
     T getValue() const
     {
@@ -79,21 +88,23 @@ private:
     std::vector<bool> initialized_;
 };
 
-template <typename T> struct StateSnapShot
+template <typename T> struct StateSnapshot
 {
     T value;
     double timestamp;
     double hz;
+    bool is_valid;
 
-    StateSnapShot(const TimedFreqState<T>& state)
-        : value(state.getValue()), timestamp(state.getTimestamp()), hz(state.getHz())
+    StateSnapshot(const TimedFreqState<T>& state)
+        : value(state.getValue()), timestamp(state.getTimestamp()), hz(state.getHz()), is_valid(state.isValid())
     {
     }
 
     std::string toString() const
     {
         std::ostringstream oss;
-        oss << "StateSnapShot(value=" << value.toString() << ", timestamp=" << timestamp << ", hz=" << hz << ")";
+        oss << "StateSnapshot(valid=" << (is_valid ? "true" : "false") << "; timestamp=" << timestamp << "; hz=" << hz
+            << " value=" << value.toString() << ")";
         return oss.str();
     }
 };

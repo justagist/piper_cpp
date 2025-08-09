@@ -23,21 +23,21 @@ struct ArmMsgFeedbackCurrentMotorMaxAccLimit
     }
 };
 
-// Container for all 6 motors' acceleration feedback (indexed from 1 to 6)
+// Container for all 6 motors' acceleration feedback (indexed from 0 to 5)
 struct ArmMsgFeedbackAllCurrentMotorMaxAccLimit
 {
-    ArmMsgFeedbackCurrentMotorMaxAccLimit motor[7];
+    ArmMsgFeedbackCurrentMotorMaxAccLimit motor[6];
 
     ArmMsgFeedbackAllCurrentMotorMaxAccLimit()
     {
-        for (int i = 0; i < 7; ++i)
+        for (int i = 0; i < 6; ++i)
             motor[i] = ArmMsgFeedbackCurrentMotorMaxAccLimit{};
     }
 
     std::string toString() const
     {
         std::ostringstream oss;
-        for (int i = 1; i <= 6; ++i)
+        for (int i = 0; i <= 5; ++i)
             oss << motor[i].toString() << "\n";
         return oss.str();
     }
@@ -76,6 +76,21 @@ struct ArmMsgFeedbackHighSpd
             << "  pos: " << pos << "\n"
             << "  effort: " << effort << "\n"
             << ")";
+        return oss.str();
+    }
+};
+
+struct ArmMsgFeedbackHighSpdArray
+{
+    std::array<ArmMsgFeedbackHighSpd, 6> high_spd_feedbacks; // 6 joints
+
+    std::string toString() const
+    {
+        std::ostringstream oss;
+        for (size_t i = 0; i < high_spd_feedbacks.size(); ++i)
+        {
+            oss << "[Joint " << (i + 1) << "] " << high_spd_feedbacks[i].toString() << "\n";
+        }
         return oss.str();
     }
 };
@@ -141,6 +156,21 @@ struct ArmMsgFeedbackLowSpd
             << "  foc_status: \n"
             << foc_status.toString() << "  bus_current: " << bus_current << ", " << (bus_current * 0.001f) << " A\n"
             << ")";
+        return oss.str();
+    }
+};
+
+struct ArmMsgFeedbackLowSpdArray
+{
+    std::array<ArmMsgFeedbackLowSpd, 6> low_spd_feedbacks; // 6 joints
+
+    std::string toString() const
+    {
+        std::ostringstream oss;
+        for (size_t i = 0; i < low_spd_feedbacks.size(); ++i)
+        {
+            oss << "[Joint " << (i + 1) << "] " << low_spd_feedbacks[i].toString() << "\n";
+        }
         return oss.str();
     }
 };
