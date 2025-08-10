@@ -108,6 +108,24 @@ public:
 
     std::vector<std::array<double, 6>> getCalculatedControlFK() const;
 
+    StateSnapshot<PiperHealth> getArmHealth() const { return StateSnapshot(arm_health_); }
+
+    bool isHealthy() const { return arm_health_.isValid() && arm_health_.isHealthy(); }
+
+    bool isEnabled() const
+    {
+        auto lowspd_fb = getArmLowSpeedFeedbacks();
+        if (lowspd_fb.is_valid)
+        {
+            const auto& fb = lowspd_fb.value;
+            return std::all_of(
+                fb.low_spd_feedbacks.begin(), fb.low_spd_feedbacks.end(),
+                [](const ArmMsgFeedbackLowSpd& msg) { return msg.foc_status.driver_enable_status; }
+            );
+        }
+        return false;
+    }
+
     PiperParamManager& getParameterManager() const { return PiperParamManager::instance(); }
 
 private:
@@ -149,6 +167,7 @@ private:
     TimedFreqState<ArmMsgJointValues> arm_joint_ctrl_msgs_;
     TimedFreqState<ArmMsgGripperCtrl> arm_gripper_ctrl_;
     TimedFreqState<ArmMsgMotionCtrl_2> arm_motion_ctrl_code_151_;
+    TimedFreqState<PiperHealth> arm_health_;
 
     std::vector<uint8_t> firmware_data_;
     mutable std::mutex firmware_data_mutex_;

@@ -128,4 +128,10 @@ struct PiperMessage
     }
 };
 
+struct PiperHealth
+{
+    ArmMsgType last_msg_type = ArmMsgType::Unknown;
+    ArmMsgFeedbackStatus arm_status;
+};
+
 } // namespace piper_cpp

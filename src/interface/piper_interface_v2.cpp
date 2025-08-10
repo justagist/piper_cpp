@@ -86,7 +86,7 @@ void PiperInterfaceV2::readLoop()
             // Process the received CAN message
             // The callback will handle parsing and updating state
         }
-        // std::this_thread::sleep_for(std::chrono::milliseconds(100)); // TODO: Adjust sleep duration as needed
+        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // TODO: Adjust sleep duration as needed
     }
 }
 
@@ -127,10 +127,12 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame& frame, double times
     if (parser_->decodeMessage(frame, timestamp, msg))
     {
         auto& pm = getParameterManager();
+        auto health = arm_health_.getValue();
         switch (msg.type)
         {
         case ArmMsgType::StatusFeedback:
             arm_status_.set(msg.arm_status_msgs, msg.timestamp);
+            health.arm_status = msg.arm_status_msgs;
             break;
         case ArmMsgType::EndPoseFeedback1:
         {
@@ -399,6 +401,9 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame& frame, double times
             // Handle other message types as needed
             break;
         }
+
+        health.last_msg_type = msg.type;
+        arm_health_.set(health, msg.timestamp);
     }
 }
 

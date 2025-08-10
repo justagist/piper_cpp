@@ -106,6 +106,12 @@ int main()
                       << ", " << fk[3] << ", " << fk[4] << ", " << fk[5] << std::endl;
         }
 
+        bool robot_enabled = piper.isEnabled();
+        std::cout << "Robot enabled: " << (robot_enabled ? "true" : "false") << std::endl;
+
+        bool robot_healthy = piper.isHealthy();
+        std::cout << "Robot healthy: " << (robot_healthy ? "true" : "false") << std::endl;
+
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 

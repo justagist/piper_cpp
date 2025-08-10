@@ -14,6 +14,9 @@ template <typename T> class TimedFreqState
 
     using clock = std::chrono::steady_clock;
 
+    // if a set() call is not received within this time, the data stream is considered unhealthy.
+    const uint HEALTH_TIMEOUT_MS = 1000;
+
 public:
     TimedFreqState()
     {
@@ -57,7 +60,28 @@ public:
     {
         std::lock_guard<std::mutex> lk(mutex_);
         return initialized_.size() > 0 &&
-               std::any_of(initialized_.begin(), initialized_.end(), [](bool init) { return init; });
+               std::all_of(initialized_.begin(), initialized_.end(), [](bool init) { return init; });
+    }
+
+    bool isHealthy() const
+    {
+        if (!isValid())
+        {
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            double now_sec =
+                std::chrono::duration_cast<std::chrono::duration<double>>(clock::now().time_since_epoch()).count();
+            for (size_t i = 0; i < last_timestamp_.size(); ++i)
+            {
+                if (last_timestamp_.at(i) + HEALTH_TIMEOUT_MS < now_sec)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
 
     /// Atomically read out the payload
@@ -72,7 +96,7 @@ public:
         std::lock_guard<std::mutex> lk(mutex_);
         return timestamp_;
     }
-    /// Instantaneous rate based on last two set() calls (averaged if multiple callers)
+    /// Instantaneous rate based on last set() calls (averaged if multiple callers)
     double getHz() const
     {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -94,9 +118,11 @@ template <typename T> struct StateSnapshot
     double timestamp;
     double hz;
     bool is_valid;
+    bool is_healthy;
 
     StateSnapshot(const TimedFreqState<T>& state)
-        : value(state.getValue()), timestamp(state.getTimestamp()), hz(state.getHz()), is_valid(state.isValid())
+        : value(state.getValue()), timestamp(state.getTimestamp()), hz(state.getHz()), is_valid(state.isValid()),
+          is_healthy(state.isHealthy())
     {
     }
 
@@ -104,7 +130,7 @@ template <typename T> struct StateSnapshot
     {
         std::ostringstream oss;
         oss << "StateSnapshot(valid=" << (is_valid ? "true" : "false") << "; timestamp=" << timestamp << "; hz=" << hz
-            << " value=" << value.toString() << ")";
+            << "; is_healthy=" << (is_healthy ? "true" : "false") << "; value=" << value.toString() << ")";
         return oss.str();
     }
 };
