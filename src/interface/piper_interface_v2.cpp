@@ -65,8 +65,6 @@ bool PiperInterfaceV2::connectPort(bool can_init, bool piper_init, bool start_th
     {
         stop_read_.store(false, std::memory_order_relaxed);
         read_thread_ = std::thread(&PiperInterfaceV2::readLoop, this);
-        stop_monitor_.store(false, std::memory_order_relaxed);
-        monitor_thread_ = std::thread(&PiperInterfaceV2::monitorLoop, this);
     }
     return true;
 }
@@ -75,6 +73,8 @@ void PiperInterfaceV2::piperInit()
 {
     // Send the three "search" commands for joint limits, acc limits, firmware
     /// TODO: Implement the actual commands to sends
+    searchAllMotorLimits();
+    sendFirmwareQuery();
 }
 
 void PiperInterfaceV2::readLoop()
@@ -90,16 +90,6 @@ void PiperInterfaceV2::readLoop()
     }
 }
 
-void PiperInterfaceV2::monitorLoop()
-{
-    while (!stop_monitor_.load(std::memory_order_relaxed))
-    {
-        // Monitor the state of the arm, e.g., check for errors or status updates
-        // This could involve checking the arm status or other parameters
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // TODO: Adjust sleep duration as needed
-    }
-}
-
 void PiperInterfaceV2::disconnectPort(std::chrono::milliseconds timeout)
 {
     if (!connected_.load(std::memory_order_relaxed))
@@ -110,11 +100,6 @@ void PiperInterfaceV2::disconnectPort(std::chrono::milliseconds timeout)
     if (read_thread_.joinable())
     {
         read_thread_.join();
-    }
-    stop_monitor_.store(true, std::memory_order_relaxed);
-    if (monitor_thread_.joinable())
-    {
-        monitor_thread_.join();
     }
     arm_can_->close();
     connected_.store(false, std::memory_order_relaxed);
@@ -475,8 +460,6 @@ bool PiperInterfaceV2::enableRobot()
     return sendPiperMsg(msg);
 }
 
-
-
 bool PiperInterfaceV2::disableRobot()
 {
     // Send the disable command to the robot
@@ -484,6 +467,52 @@ bool PiperInterfaceV2::disableRobot()
     msg.type = ArmMsgType::MotorEnableDisableConfig;
     msg.arm_motor_enable = ArmMsgMotorEnableDisableConfig({7, 0x01});
     return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::searchAllMotorLimits()
+{
+    for (size_t motor_num = 1; motor_num <= PiperMessage::num_joints; ++motor_num)
+    {
+        PiperMessage msg1;
+        msg1.type = ArmMsgType::SearchMotorMaxAngleSpdAccLimit;
+        msg1.arm_search_motor_max_angle_spd_acc_limit =
+            ArmMsgSearchMotorMaxAngleSpdAccLimit({static_cast<uint8_t>(motor_num), 0x01});
+        if (!sendPiperMsg(msg1))
+        {
+            std::cerr << "Error: Failed to send search angle/speed limit for motor " << motor_num << ".\n";
+            return false;
+        }
+
+        PiperMessage msg2;
+        msg2.type = ArmMsgType::SearchMotorMaxAngleSpdAccLimit;
+        msg2.arm_search_motor_max_angle_spd_acc_limit =
+            ArmMsgSearchMotorMaxAngleSpdAccLimit({static_cast<uint8_t>(motor_num), 0x02});
+        if (!sendPiperMsg(msg2))
+        {
+            std::cerr << "Error: Failed to send search acc limits for motor " << motor_num << ".\n";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool PiperInterfaceV2::sendFirmwareQuery()
+{
+    if (!connected_.load(std::memory_order_relaxed))
+    {
+        std::cerr << "Error: Cannot send message, interface is not connected.\n";
+        return false;
+    }
+
+    std::vector<uint8_t> data{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    uint16_t can_id = 0x4AF;
+
+    if (!arm_can_->sendCanMessage(can_id, data))
+    {
+        std::cerr << "Error: Failed to send firmware query CAN message.\n";
+        return false;
+    }
+    return true;
 }
 
 } // namespace piper_cpp

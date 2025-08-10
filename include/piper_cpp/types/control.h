@@ -231,6 +231,8 @@ struct ArmMsgParamEnquiryAndConfig
 struct ArmMsgSearchMotorMaxAngleSpdAccLimit
 {
     uint8_t motor_num = 1;
+    // 0x01: Query motor angle/max speed.
+    // 0x02: Query motor max acceleration limit.
     uint8_t search_content = 0x01;
 
     std::string toString() const

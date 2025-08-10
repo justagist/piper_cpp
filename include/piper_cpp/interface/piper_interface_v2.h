@@ -142,7 +142,11 @@ private:
     /// Parse a raw CAN frame and update all the TimedFreqState<> members.
     void parseCANFrame(const struct can_frame&, double timestamp);
 
+    bool searchAllMotorLimits();
+
     bool sendPiperMsg(const PiperMessage& msg);
+
+    bool sendFirmwareQuery();
 
     std::string can_name_;
     std::unique_ptr<PiperParserBase> parser_;
@@ -153,8 +157,8 @@ private:
 
     std::atomic<bool> connected_{false};
 
-    std::thread read_thread_, monitor_thread_;
-    std::atomic<bool> stop_read_{false}, stop_monitor_{false};
+    std::thread read_thread_;
+    std::atomic<bool> stop_read_{false};
 
     TimedFreqState<ArmMsgFeedbackStatus> arm_status_;
     TimedFreqState<ArmMsgEndPose> arm_end_pose_;

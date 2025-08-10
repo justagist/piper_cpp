@@ -113,6 +113,14 @@ int main()
         bool robot_healthy = piper.isHealthy();
         std::cout << "Robot healthy: " << (robot_healthy ? "true" : "false") << std::endl;
 
+        // const auto& firmware_data = piper.getFirmwareData();
+        // std::cout << "Firmware binary (" << firmware_data.size() << " bytes): ";
+        // for (uint8_t byte : firmware_data)
+        // {
+        //     std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
+        // }
+        // std::cout << std::dec << std::endl;
+
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
