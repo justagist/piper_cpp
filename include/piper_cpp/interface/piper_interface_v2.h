@@ -128,6 +128,9 @@ public:
 
     PiperParamManager& getParameterManager() const { return PiperParamManager::instance(); }
 
+    bool enableRobot();
+    bool disableRobot();
+
 private:
     /// High‐resolution timestamp in seconds
     static double getCurrentTime()
@@ -138,6 +141,8 @@ private:
 
     /// Parse a raw CAN frame and update all the TimedFreqState<> members.
     void parseCANFrame(const struct can_frame&, double timestamp);
+
+    bool sendPiperMsg(const PiperMessage& msg);
 
     std::string can_name_;
     std::unique_ptr<PiperParserBase> parser_;

@@ -71,7 +71,6 @@ target_include_directories(piper_interface_v2_read_test
     PRIVATE include
 )
 
-# Add piper_parser_v2 read test executable
 add_executable(can_activate
     scripts/can_activate.cpp
 )
@@ -80,6 +79,17 @@ target_link_libraries(can_activate
 )
 
 target_include_directories(can_activate
+    PRIVATE include
+)
+
+add_executable(piper_enable
+    scripts/piper_enable.cpp
+)
+target_link_libraries(piper_enable
+    PRIVATE piper_cpp
+)
+
+target_include_directories(piper_enable
     PRIVATE include
 )
 
@@ -93,6 +103,7 @@ install(TARGETS piper_cpp_can_utils_demo
         piper_parser_v2_read_test
         piper_interface_v2_read_test
         can_activate
+        piper_enable
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

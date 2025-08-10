@@ -439,4 +439,51 @@ std::vector<std::array<double, 6>> PiperInterfaceV2::getCalculatedControlFK() co
     );
 }
 
+bool PiperInterfaceV2::sendPiperMsg(const PiperMessage& msg)
+{
+    if (!connected_.load(std::memory_order_relaxed))
+    {
+        std::cerr << "Error: Cannot send message, interface is not connected.\n";
+        return false;
+    }
+    struct can_frame tx
+    {
+    };
+    if (!parser_->encodeMessage(msg, tx))
+    {
+        std::cerr << "Error: Failed to encode Piper message.\n";
+        return false;
+    }
+    std::vector<uint8_t> data(tx.data, tx.data + PiperMessage::raw_data_len);
+
+    auto can_id = static_cast<uint16_t>(msgTypeToCanId(msg.type));
+
+    if (!arm_can_->sendCanMessage(can_id, data))
+    {
+        std::cerr << "Error: Failed to send CAN message.\n";
+        return false;
+    }
+    return true;
+}
+
+bool PiperInterfaceV2::enableRobot()
+{
+    // Send the enable command to the robot
+    PiperMessage msg;
+    msg.type = ArmMsgType::MotorEnableDisableConfig;
+    msg.arm_motor_enable = ArmMsgMotorEnableDisableConfig({7, 0x02});
+    return sendPiperMsg(msg);
+}
+
+
+
+bool PiperInterfaceV2::disableRobot()
+{
+    // Send the disable command to the robot
+    PiperMessage msg;
+    msg.type = ArmMsgType::MotorEnableDisableConfig;
+    msg.arm_motor_enable = ArmMsgMotorEnableDisableConfig({7, 0x01});
+    return sendPiperMsg(msg);
+}
+
 } // namespace piper_cpp

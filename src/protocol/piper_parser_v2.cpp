@@ -285,7 +285,6 @@ bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double times
     }
 
     default:
-        printf("Unknown CAN ID: %u\n", can_id);
         return false;
     }
     return true;

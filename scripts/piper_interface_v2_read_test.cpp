@@ -26,6 +26,7 @@ int main()
     // 3) Run a 10 s loop, polling every 500 ms:
     for (int i = 0; i < 20; ++i)
     {
+
         // 1) Arm status
         auto status = piper.getArmStatus();
         std::cout << std::fixed << std::setprecision(6) << status.toString() << std::endl;
