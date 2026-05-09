@@ -6,41 +6,41 @@ namespace piper_cpp
 {
 
 // Utility for endian conversion, assumes network (big-endian) order.
-static int32_t bytesToInt32(const uint8_t* data)
+static int32_t bytesToInt32(const uint8_t *data)
 {
     uint32_t val = (uint32_t(data[0]) << 24) | (uint32_t(data[1]) << 16) | (uint32_t(data[2]) << 8) | uint32_t(data[3]);
     return static_cast<int32_t>(val); // This cast will sign-extend if MSB is set
 }
 
-static int16_t bytesToInt16(const uint8_t* data)
+static int16_t bytesToInt16(const uint8_t *data)
 {
     uint16_t val = (uint16_t(data[0]) << 8) | uint16_t(data[1]);
     return static_cast<int16_t>(val); // This cast will sign-extend if MSB is set
 }
 
 // For unsigned 16-bit
-static uint16_t bytesToUint16(const uint8_t* data) { return (uint16_t(data[0]) << 8) | uint16_t(data[1]); }
+static uint16_t bytesToUint16(const uint8_t *data) { return (uint16_t(data[0]) << 8) | uint16_t(data[1]); }
 
 // For signed 8-bit (this is safe, but explicit)
-static int8_t bytesToInt8(const uint8_t* data) { return static_cast<int8_t>(data[0]); }
+static int8_t bytesToInt8(const uint8_t *data) { return static_cast<int8_t>(data[0]); }
 
 // For unsigned 8-bit
-static uint8_t bytesToUint8(const uint8_t* data) { return data[0]; }
+static uint8_t bytesToUint8(const uint8_t *data) { return data[0]; }
 
 // Split a value into unsigned bytes (big-endian)
-inline void int16_to_bytes(uint16_t val, uint8_t* out)
+inline void int16_to_bytes(uint16_t val, uint8_t *out)
 {
     out[0] = (val >> 8) & 0xFF;
     out[1] = (val) & 0xFF;
 }
 
-inline void uint16_to_bytes(uint16_t value, uint8_t* out)
+inline void uint16_to_bytes(uint16_t value, uint8_t *out)
 {
     out[0] = (value >> 8) & 0xFF;
     out[1] = value & 0xFF;
 }
 
-inline void int32_to_bytes(int32_t val, uint8_t* out)
+inline void int32_to_bytes(int32_t val, uint8_t *out)
 {
     out[0] = (val >> 24) & 0xFF;
     out[1] = (val >> 16) & 0xFF;
@@ -48,7 +48,7 @@ inline void int32_to_bytes(int32_t val, uint8_t* out)
     out[3] = (val) & 0xFF;
 }
 // For uint32_t
-inline void uint32_to_bytes(uint32_t val, uint8_t* out)
+inline void uint32_to_bytes(uint32_t val, uint8_t *out)
 {
     out[0] = (val >> 24) & 0xFF;
     out[1] = (val >> 16) & 0xFF;
@@ -56,12 +56,12 @@ inline void uint32_to_bytes(uint32_t val, uint8_t* out)
     out[3] = (val) & 0xFF;
 }
 // For 8-bit
-inline void int8_to_bytes(uint8_t val, uint8_t* out) { out[0] = val & 0xFF; }
+inline void int8_to_bytes(uint8_t val, uint8_t *out) { out[0] = val & 0xFF; }
 
-bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double timestamp, PiperMessage& msg)
+bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double timestamp, PiperMessage &msg)
 {
     uint32_t can_id = rx_frame.can_id & CAN_EFF_MASK;
-    const uint8_t* data = rx_frame.data;
+    const uint8_t *data = rx_frame.data;
     auto can_enum_id = static_cast<CanIDPiper>(can_id);
     msg.can_id = can_id;
     try
@@ -149,7 +149,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double times
         if (idx < msg.high_spd_feedbacks.size())
         {
             msg.type = static_cast<ArmMsgType>(static_cast<int>(ArmMsgType::HighSpdFeed1) + idx);
-            auto& high = msg.high_spd_feedbacks[idx];
+            auto &high = msg.high_spd_feedbacks[idx];
             high.can_id = can_id;
             high.motor_speed = bytesToInt16(&data[0]);
             high.current = bytesToInt16(&data[2]);
@@ -171,7 +171,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double times
         if (idx < msg.low_spd_feedbacks.size())
         {
             msg.type = static_cast<ArmMsgType>(static_cast<int>(ArmMsgType::LowSpdFeed1) + idx);
-            auto& low = msg.low_spd_feedbacks[idx];
+            auto &low = msg.low_spd_feedbacks[idx];
             low.can_id = can_id;
             low.vol = bytesToUint16(&data[0]);
             low.foc_temp = bytesToInt16(&data[2]);
@@ -284,6 +284,15 @@ bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double times
         break;
     }
 
+    // ----- Instruction Response (0x476) -----
+    case CanIDPiper::ARM_INSTRUCTION_RESPONSE_CONFIG:
+    {
+        msg.type = ArmMsgType::InstructionResponseConfig;
+        msg.arm_set_instruction_response.instruction_index = data[0];
+        msg.arm_set_instruction_response.zero_config_success_flag = data[1];
+        break;
+    }
+
     default:
         return false;
     }
@@ -291,7 +300,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame& rx_frame, double times
 }
 
 // Main function
-bool PiperParserV2::encodeMessage(const PiperMessage& msg, struct can_frame& tx_frame)
+bool PiperParserV2::encodeMessage(const PiperMessage &msg, struct can_frame &tx_frame)
 {
     using namespace std;
     bool ret = true;
@@ -458,7 +467,7 @@ bool PiperParserV2::encodeMessage(const PiperMessage& msg, struct can_frame& tx_
     case ArmMsgType::JointMitCtrl6:
     {
         size_t joint_idx = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::JointMitCtrl1);
-        const ArmMsgJointMitCtrl& mit = msg.arm_joint_mit_ctrl.motors[joint_idx];
+        const ArmMsgJointMitCtrl &mit = msg.arm_joint_mit_ctrl.motors[joint_idx];
 
         tx_frame.data[0] = (mit.pos_ref >> 8) & 0xFF;
         tx_frame.data[1] = mit.pos_ref & 0xFF;

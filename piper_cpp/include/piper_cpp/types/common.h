@@ -10,7 +10,7 @@ namespace piper_cpp
 // joint states/commands
 struct ArmMsgJointValues
 {
-    // Each value in 0.001 degrees
+    // Each value in millidegrees
     int32_t joint_1{0};
     int32_t joint_2{0};
     int32_t joint_3{0};

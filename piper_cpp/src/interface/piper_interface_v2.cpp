@@ -17,7 +17,7 @@ PiperInterfaceV2::PiperInterfaceV2(
     fk_ = std::make_unique<PiperForwardKinematics>(dh_offset);
     arm_can_ = std::make_unique<StdCanInterface>(
         can_name_, 1000000, judge_flag, auto_init,
-        [this](const struct can_frame& frame, double timestamp) { parseCANFrame(frame, timestamp); }
+        [this](const struct can_frame &frame, double timestamp) { parseCANFrame(frame, timestamp); }
     );
 
     arm_status_.setNumCallers(1);
@@ -36,6 +36,7 @@ PiperInterfaceV2::PiperInterfaceV2(
     arm_joint_ctrl_msgs_.setNumCallers(3); // joint control messages are updated in 3 parts
     arm_gripper_ctrl_.setNumCallers(1);    // gripper control messages
     arm_motion_ctrl_code_151_.setNumCallers(1);
+    arm_instruction_response_.setNumCallers(1);
 
     /// TODO: initialise other members as in python
 }
@@ -105,13 +106,13 @@ void PiperInterfaceV2::disconnectPort(std::chrono::milliseconds timeout)
     connected_.store(false, std::memory_order_relaxed);
 }
 
-void PiperInterfaceV2::parseCANFrame(const struct can_frame& frame, double timestamp)
+void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double timestamp)
 {
     // Parse the CAN frame using the parser
     PiperMessage msg;
     if (parser_->decodeMessage(frame, timestamp, msg))
     {
-        auto& pm = getParameterManager();
+        auto &pm = getParameterManager();
         auto health = arm_health_.getValue();
         switch (msg.type)
         {
@@ -369,6 +370,7 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame& frame, double times
                 gripper_ctrl.grippers_angle = pm.clampGripperMicrometers(gripper_ctrl.grippers_angle);
             }
             arm_gripper_ctrl_.set(gripper_ctrl, msg.timestamp);
+            break;
         }
         case ArmMsgType::MotionCtrl2:
         {
@@ -379,6 +381,11 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame& frame, double times
         {
             std::lock_guard<std::mutex> lock(firmware_data_mutex_);
             firmware_data_.insert(firmware_data_.end(), msg.firmware_data.begin(), msg.firmware_data.end());
+            break;
+        }
+        case ArmMsgType::InstructionResponseConfig:
+        {
+            arm_instruction_response_.set(msg.arm_set_instruction_response, msg.timestamp);
             break;
         }
 
@@ -424,7 +431,7 @@ std::vector<std::array<double, 6>> PiperInterfaceV2::getCalculatedControlFK() co
     );
 }
 
-bool PiperInterfaceV2::sendPiperMsg(const PiperMessage& msg)
+bool PiperInterfaceV2::sendPiperMsg(const PiperMessage &msg)
 {
     if (!connected_.load(std::memory_order_relaxed))
     {
@@ -466,6 +473,128 @@ bool PiperInterfaceV2::disableRobot()
     PiperMessage msg;
     msg.type = ArmMsgType::MotorEnableDisableConfig;
     msg.arm_motor_enable = ArmMsgMotorEnableDisableConfig({7, 0x01});
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::sendCommandedMotionCtrlLocked()
+{
+    // Caller must hold ctrl_151_tx_mutex_.
+    PiperMessage msg;
+    msg.type = ArmMsgType::MotionCtrl2;
+    msg.arm_motion_ctrl_2 = ctrl_151_tx_;
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::sendMotionCtrl2(
+    CtrlMode ctrl_mode, MoveMode move_mode, uint8_t move_spd_rate_ctrl, MitMode mit_mode, uint8_t residence_time,
+    InstallationPos installation_pos
+)
+{
+    if (move_spd_rate_ctrl > 100)
+        move_spd_rate_ctrl = 100;
+    std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
+    ctrl_151_tx_ = ArmMsgMotionCtrl_2{
+        static_cast<uint8_t>(ctrl_mode),
+        static_cast<uint8_t>(move_mode),
+        move_spd_rate_ctrl,
+        static_cast<uint8_t>(mit_mode),
+        residence_time,
+        static_cast<uint8_t>(installation_pos),
+    };
+    return sendCommandedMotionCtrlLocked();
+}
+
+bool PiperInterfaceV2::setCtrlMode(CtrlMode ctrl_mode)
+{
+    std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
+    ctrl_151_tx_.ctrl_mode = static_cast<uint8_t>(ctrl_mode);
+    return sendCommandedMotionCtrlLocked();
+}
+
+bool PiperInterfaceV2::setMoveMode(MoveMode move_mode)
+{
+    std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
+    ctrl_151_tx_.move_mode = static_cast<uint8_t>(move_mode);
+    return sendCommandedMotionCtrlLocked();
+}
+
+bool PiperInterfaceV2::setSpeedPercentage(uint8_t percentage)
+{
+    if (percentage > 100)
+        percentage = 100;
+    std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
+    ctrl_151_tx_.move_spd_rate_ctrl = percentage;
+    return sendCommandedMotionCtrlLocked();
+}
+
+bool PiperInterfaceV2::setMitMode(MitMode mit_mode)
+{
+    std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
+    ctrl_151_tx_.mit_mode = static_cast<uint8_t>(mit_mode);
+    return sendCommandedMotionCtrlLocked();
+}
+
+bool PiperInterfaceV2::setResidenceTime(uint8_t seconds)
+{
+    std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
+    ctrl_151_tx_.residence_time = seconds;
+    return sendCommandedMotionCtrlLocked();
+}
+
+bool PiperInterfaceV2::setInstallationPos(InstallationPos installation_pos)
+{
+    std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
+    ctrl_151_tx_.installation_pos = static_cast<uint8_t>(installation_pos);
+    return sendCommandedMotionCtrlLocked();
+}
+
+ArmMsgMotionCtrl_2 PiperInterfaceV2::getCommandedMotionCtrlState() const
+{
+    std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
+    return ctrl_151_tx_;
+}
+
+bool PiperInterfaceV2::setMasterSlaveConfig(
+    LinkageConfig linkage_config, CanIdOffset feedback_offset, CanIdOffset ctrl_offset, CanIdOffset linkage_offset
+)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::MasterSlaveModeConfig;
+    msg.arm_ms_config = ArmMsgMasterSlaveModeConfig{
+        static_cast<uint8_t>(linkage_config),
+        static_cast<uint8_t>(feedback_offset),
+        static_cast<uint8_t>(ctrl_offset),
+        static_cast<uint8_t>(linkage_offset),
+    };
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::controlGripper(int32_t grippers_angle, uint16_t grippers_effort, GripperStatusCode status_code)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::GripperCtrl;
+    msg.gripper_ctrl = ArmMsgGripperCtrl{
+        grippers_angle,
+        grippers_effort,
+        static_cast<uint8_t>(status_code),
+        static_cast<uint8_t>(GripperSetZero::NoOp),
+    };
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::setGripperZero()
+{
+    // Mirrors the official piper_set_gripper_zero.py: send with status_code=Disable so the
+    // gripper is not actively driving while latching the zero reference. The angle/effort
+    // fields are ignored for this one-shot.
+    PiperMessage msg;
+    msg.type = ArmMsgType::GripperCtrl;
+    msg.gripper_ctrl = ArmMsgGripperCtrl{
+        0,
+        0,
+        static_cast<uint8_t>(GripperStatusCode::Disable),
+        static_cast<uint8_t>(GripperSetZero::SetZero),
+    };
     return sendPiperMsg(msg);
 }
 

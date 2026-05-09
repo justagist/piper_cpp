@@ -1,3 +1,4 @@
+
 cmake_minimum_required(VERSION 3.10)
 project(piper_cpp VERSION 1.0 LANGUAGES CXX)
 
@@ -25,73 +26,21 @@ target_link_libraries(piper_cpp
     PRIVATE ${LIBCANSOCKET_LIBRARIES}
 )
 
-# Demo executable for interactive tests
-add_executable(piper_cpp_can_utils_demo
-    scripts/can_utils_demo.cpp
-)
-target_link_libraries(piper_cpp_can_utils_demo
-    PRIVATE piper_cpp
-)
+# Helper macro to reduce duplication for test/demo executables
+function(add_piper_executable exe_name src_file)
+    add_executable(${exe_name} scripts/${src_file})
+    target_link_libraries(${exe_name} PRIVATE piper_cpp)
+    target_include_directories(${exe_name} PRIVATE include)
+endfunction()
 
-target_include_directories(piper_cpp_can_utils_demo
-    PRIVATE include
-)
-add_executable(piper_cpp_std_can_interface_read
-    scripts/std_can_interface_read_test.cpp
-)
-target_link_libraries(piper_cpp_std_can_interface_read
-    PRIVATE piper_cpp
-)
-
-target_include_directories(piper_cpp_std_can_interface_read
-    PRIVATE include
-)
-
-# Add piper_parser_v2 read test executable
-add_executable(piper_parser_v2_read_test
-    scripts/piper_parser_v2_read_test.cpp
-)
-target_link_libraries(piper_parser_v2_read_test
-    PRIVATE piper_cpp
-)
-
-target_include_directories(piper_parser_v2_read_test
-    PRIVATE include
-)
-
-# Add piper_interface_v2 read test executable
-add_executable(piper_interface_v2_read_test
-    scripts/piper_interface_v2_read_test.cpp
-)
-target_link_libraries(piper_interface_v2_read_test
-    PRIVATE piper_cpp
-)
-
-target_include_directories(piper_interface_v2_read_test
-    PRIVATE include
-)
-
-add_executable(can_activate
-    scripts/can_activate.cpp
-)
-target_link_libraries(can_activate
-    PRIVATE piper_cpp
-)
-
-target_include_directories(can_activate
-    PRIVATE include
-)
-
-add_executable(piper_enable
-    scripts/piper_enable.cpp
-)
-target_link_libraries(piper_enable
-    PRIVATE piper_cpp
-)
-
-target_include_directories(piper_enable
-    PRIVATE include
-)
+# Use macro for all test/demo executables
+add_piper_executable(piper_cpp_can_utils_demo can_utils_demo.cpp)
+add_piper_executable(piper_cpp_std_can_interface_read std_can_interface_read_test.cpp)
+add_piper_executable(piper_parser_v2_read_test piper_parser_v2_read_test.cpp)
+add_piper_executable(piper_interface_v2_read_test piper_interface_v2_read_test.cpp)
+add_piper_executable(can_activate can_activate.cpp)
+add_piper_executable(piper_enable piper_enable.cpp)
+add_piper_executable(piper_gripper_sweep piper_gripper_sweep.cpp)
 
 # Install rules
 include(GNUInstallDirs)
@@ -104,6 +53,7 @@ install(TARGETS piper_cpp_can_utils_demo
         piper_interface_v2_read_test
         can_activate
         piper_enable
+        piper_gripper_sweep
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

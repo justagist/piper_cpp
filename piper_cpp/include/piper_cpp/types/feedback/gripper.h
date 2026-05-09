@@ -70,5 +70,4 @@ struct ArmMsgFeedbackGripper
     }
 };
 
-
 } // namespace piper_cpp

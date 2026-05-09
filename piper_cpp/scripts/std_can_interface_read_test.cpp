@@ -1,9 +1,9 @@
 #include "piper_cpp/std_can_interface.h"
 #include <chrono>
 #include <csignal>
+#include <iomanip>
 #include <iostream>
 #include <thread>
-#include <iomanip>
 
 using namespace piper_cpp;
 
