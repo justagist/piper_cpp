@@ -234,6 +234,11 @@ public:
     /// of the most recent CAN frame parsed. Updates whenever any feedback frame is decoded.
     StateSnapshot<PiperHealth> getArmHealth() const { return StateSnapshot(arm_health_); }
 
+    /// True if the CAN port is currently open and the read thread is running. Set by
+    /// `connectPort()`, cleared by `disconnectPort()`. Distinct from `isHealthy()` which
+    /// checks whether feedback is actively arriving on the bus.
+    bool isConnected() const { return connected_.load(std::memory_order_relaxed); }
+
     /// True if the arm-health snapshot is both valid (at least one feedback frame received)
     /// and healthy (most recent frame within ~1 second). Use as a quick "is the arm
     /// communicating right now?" check.
