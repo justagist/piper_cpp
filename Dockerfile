@@ -20,6 +20,7 @@ RUN apt-get update && \
       git \
       python3-colcon-common-extensions \
       python3-rosdep \
+      python3-venv \
       can-utils \
       iproute2 \
       libsocketcan-dev \
@@ -29,8 +30,8 @@ RUN apt-get update && \
 # ------------------------------------------------------------------------------
 # Initialize rosdep (safe if re-run)
 # ------------------------------------------------------------------------------
-RUN rosdep init 2>/dev/null || true && \
-    rosdep update
+# RUN rosdep init 2>/dev/null || true && \
+#     rosdep update
 
 # ------------------------------------------------------------------------------
 # Create a colcon workspace
@@ -46,14 +47,14 @@ COPY . /ws/src/piper_cpp/
 # ------------------------------------------------------------------------------
 # Resolve package dependencies via rosdep (from source, ignore already-installed)
 # ------------------------------------------------------------------------------
-RUN . /opt/ros/jazzy/setup.sh && \
-    rosdep install --from-paths src --ignore-src -r -y
+# RUN . /opt/ros/jazzy/setup.sh && \
+#     rosdep install --from-paths src --ignore-src -r -y
 
 # ------------------------------------------------------------------------------
 # Build with colcon
 # ------------------------------------------------------------------------------
 RUN . /opt/ros/jazzy/setup.sh && \
-    colcon build --symlink-install
+    colcon build --symlink-install --packages-select piper_cpp
 
 # ------------------------------------------------------------------------------
 # ROS entrypoint (source ROS + workspace on container start)

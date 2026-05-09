@@ -1,14 +1,15 @@
 {
-    "name": "piper_cpp (ROS 2 Jazzy)",
+    "name": "piper_cpp_dev",
     "build": {
         "dockerfile": "../Dockerfile",
         "context": ".."
     },
-    // We’ll do dev work in /ws, which is a colcon workspace
     "workspaceFolder": "/ws",
-    // Bind your local repo into the container at /ws/src/piper_cpp
-    "workspaceMount": "source=${localWorkspaceFolder},target=/ws/src/piper_cpp,type=bind",
-    // Keep the Dockerfile’s entrypoint so ROS env is sourced automatically
+    "mounts": [
+        "type=bind,source=${localWorkspaceFolder},target=/ws/src/piper_cpp",
+        "type=volume,source=piper_cpp_build,target=/ws/build",
+        "type=volume,source=piper_cpp_install,target=/ws/install"
+    ],
     "overrideCommand": true,
     "postStartCommand": "bash",
     // Helpful capabilities & mounts for SocketCAN work
@@ -29,11 +30,12 @@
                 "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
             },
             "extensions": [
+                "ms-azuretools.vscode-docker",
+                "ms-python.python",
                 "ms-vscode.cpptools",
-                "ms-vscode.cmake-tools",
-                "twxs.cmake",
-                "ms-iot.vscode-ros",
-                "ms-python.python"
+                "charliermarsh.ruff",
+                "yzhang.markdown-all-in-one",
+                "ms-vscode.cpptools-extension-pack"
             ]
         }
     },

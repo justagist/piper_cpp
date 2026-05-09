@@ -39,3 +39,6 @@ cmake-build-*/
 
 # Test results
 test_results/
+
+piper_ros/
+piper_sdk/
