@@ -41,6 +41,7 @@ add_piper_executable(piper_interface_v2_read_test piper_interface_v2_read_test.c
 add_piper_executable(can_activate can_activate.cpp)
 add_piper_executable(piper_enable piper_enable.cpp)
 add_piper_executable(piper_gripper_sweep piper_gripper_sweep.cpp)
+add_piper_executable(piper_joint_ctrl_demo piper_joint_ctrl_demo.cpp)
 
 # Install rules
 include(GNUInstallDirs)
@@ -54,6 +55,7 @@ install(TARGETS piper_cpp_can_utils_demo
         can_activate
         piper_enable
         piper_gripper_sweep
+        piper_joint_ctrl_demo
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

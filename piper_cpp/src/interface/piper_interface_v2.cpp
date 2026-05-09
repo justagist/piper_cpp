@@ -1,5 +1,7 @@
 #include "piper_cpp/interface/piper_interface_v2.h"
 #include "piper_cpp/protocol/piper_parser_v2.h"
+#include <cmath>
+#include <cstring>
 
 namespace piper_cpp
 {
@@ -598,6 +600,251 @@ bool PiperInterfaceV2::setGripperZero()
     return sendPiperMsg(msg);
 }
 
+bool PiperInterfaceV2::controlJoints(
+    int32_t joint_1_millideg, int32_t joint_2_millideg, int32_t joint_3_millideg, int32_t joint_4_millideg,
+    int32_t joint_5_millideg, int32_t joint_6_millideg
+)
+{
+    // The arm splits joint targets across three CAN frames: 1+2 -> 0x155, 3+4 -> 0x156, 5+6 -> 0x157.
+    // We pack the same `arm_joint_ctrl` struct each time; only the message type changes which
+    // determines which two int32 fields the parser writes onto the bus.
+    PiperMessage msg;
+    msg.arm_joint_ctrl = ArmMsgJointValues{
+        joint_1_millideg, joint_2_millideg, joint_3_millideg,
+        joint_4_millideg, joint_5_millideg, joint_6_millideg,
+    };
+    msg.type = ArmMsgType::JointCtrl12;
+    if (!sendPiperMsg(msg))
+        return false;
+    msg.type = ArmMsgType::JointCtrl34;
+    if (!sendPiperMsg(msg))
+        return false;
+    msg.type = ArmMsgType::JointCtrl56;
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::controlEndPose(int32_t x_um, int32_t y_um, int32_t z_um, int32_t rx_md, int32_t ry_md, int32_t rz_md)
+{
+    PiperMessage msg;
+    msg.arm_motion_ctrl_cartesian = ArmMsgEndPose{x_um, y_um, z_um, rx_md, ry_md, rz_md};
+    msg.type = ArmMsgType::MotionCtrlCartesian1;
+    if (!sendPiperMsg(msg))
+        return false;
+    msg.type = ArmMsgType::MotionCtrlCartesian2;
+    if (!sendPiperMsg(msg))
+        return false;
+    msg.type = ArmMsgType::MotionCtrlCartesian3;
+    return sendPiperMsg(msg);
+}
+
+// Float -> N-bit unsigned mapping used by the MIT joint commands. Mirrors piper_sdk's
+// FloatToUint(value, min, max, bits): clamps to [min,max], then linearly maps onto
+// [0, 2^bits - 1].
+static uint32_t floatToUintRange(double value, double min, double max, int bits)
+{
+    if (value < min)
+        value = min;
+    if (value > max)
+        value = max;
+    const double span = max - min;
+    const uint32_t max_int = (uint32_t{1} << bits) - 1u;
+    return static_cast<uint32_t>(std::lround((value - min) / span * max_int));
+}
+
+bool PiperInterfaceV2::controlJointMit(
+    uint8_t motor_num, double pos_rad, double vel, double kp, double kd, double torque
+)
+{
+    if (motor_num < 1 || motor_num > 6)
+    {
+        std::cerr << "controlJointMit: motor_num " << int(motor_num) << " out of range [1,6]\n";
+        return false;
+    }
+    // Fixed scaling ranges per the Piper protocol; do not change without firmware reference.
+    const uint16_t pos_packed = static_cast<uint16_t>(floatToUintRange(pos_rad, -12.5, 12.5, 16));
+    const uint16_t vel_packed = static_cast<uint16_t>(floatToUintRange(vel, -45.0, 45.0, 12));
+    const uint16_t kp_packed = static_cast<uint16_t>(floatToUintRange(kp, 0.0, 500.0, 12));
+    const uint16_t kd_packed = static_cast<uint16_t>(floatToUintRange(kd, -5.0, 5.0, 12));
+    const uint16_t t_packed = static_cast<uint16_t>(floatToUintRange(torque, -8.0, 8.0, 8));
+
+    PiperMessage msg;
+    const size_t idx = motor_num - 1;
+    msg.arm_joint_mit_ctrl.motors[idx] = ArmMsgJointMitCtrl{pos_packed, vel_packed, kp_packed, kd_packed, t_packed, 0};
+    msg.type = static_cast<ArmMsgType>(static_cast<int>(ArmMsgType::JointMitCtrl1) + idx);
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::sendMotionCtrl1(EmergencyStop emergency_stop, TrackCtrl track_ctrl, DragTeachCtrl drag_teach_ctrl)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::MotionCtrl1;
+    msg.arm_motion_ctrl_1 = ArmMsgMotionCtrl_1{};
+    msg.arm_motion_ctrl_1.emergency_stop = static_cast<uint8_t>(emergency_stop);
+    msg.arm_motion_ctrl_1.track_ctrl = static_cast<uint8_t>(track_ctrl);
+    msg.arm_motion_ctrl_1.grag_teach_ctrl = static_cast<uint8_t>(drag_teach_ctrl);
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::emergencyStop(EmergencyStop mode)
+{
+    return sendMotionCtrl1(mode, TrackCtrl::Disable, DragTeachCtrl::Disable);
+}
+
+bool PiperInterfaceV2::resetPiper()
+{
+    // Mirrors Python's ResetPiper(): emergency_stop=Resume on the 0x150 message.
+    return sendMotionCtrl1(EmergencyStop::Resume, TrackCtrl::Disable, DragTeachCtrl::Disable);
+}
+
+bool PiperInterfaceV2::moveCAxisUpdate(MoveCInstructionPoint point)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::CircularPatternCoordNumUpdateCtrl;
+    msg.arm_circular_ctrl.instruction_num = static_cast<uint8_t>(point);
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::enableMotor(MotorIndex motor)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::MotorEnableDisableConfig;
+    msg.arm_motor_enable = ArmMsgMotorEnableDisableConfig{static_cast<uint8_t>(motor), 0x02};
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::disableMotor(MotorIndex motor)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::MotorEnableDisableConfig;
+    msg.arm_motor_enable = ArmMsgMotorEnableDisableConfig{static_cast<uint8_t>(motor), 0x01};
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::sendJointConfig(
+    MotorIndex motor, ConfigEffective set_zero, ConfigEffective acc_effective, uint16_t max_joint_acc,
+    ConfigEffective clear_error
+)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::JointConfig;
+    msg.arm_joint_config = ArmMsgJointConfig{};
+    msg.arm_joint_config.joint_motor_num = static_cast<uint8_t>(motor);
+    msg.arm_joint_config.set_motor_current_pos_as_zero = static_cast<uint8_t>(set_zero);
+    msg.arm_joint_config.acc_param_config_is_effective_or_not = static_cast<uint8_t>(acc_effective);
+    msg.arm_joint_config.max_joint_acc = max_joint_acc;
+    msg.arm_joint_config.clear_joint_err = static_cast<uint8_t>(clear_error);
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::setJointAsCurrentZero(MotorIndex motor)
+{
+    return sendJointConfig(motor, ConfigEffective::Apply, ConfigEffective::NoChange, 0, ConfigEffective::NoChange);
+}
+
+bool PiperInterfaceV2::setJointMaxAcc(MotorIndex motor, uint16_t max_joint_acc)
+{
+    return sendJointConfig(motor, ConfigEffective::NoChange, ConfigEffective::Apply, max_joint_acc, ConfigEffective::NoChange);
+}
+
+bool PiperInterfaceV2::clearJointError(MotorIndex motor)
+{
+    return sendJointConfig(motor, ConfigEffective::NoChange, ConfigEffective::NoChange, 0, ConfigEffective::Apply);
+}
+
+bool PiperInterfaceV2::setMotorAngleLimitsMaxSpeed(
+    MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd_001rad
+)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::MotorAngleLimitMaxSpdSet;
+    msg.arm_motor_angle_limit_max_spd_set = ArmMsgCurrentMotorAngleLimitMaxSpd{
+        static_cast<uint8_t>(motor), max_angle_01deg, min_angle_01deg, max_spd_001rad
+    };
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::setMotorMaxSpeed(MotorIndex motor, int16_t max_spd_001rad)
+{
+    // 0x7FFF on the angle limit fields tells firmware V1.5-2+ to leave them untouched.
+    constexpr int16_t LEAVE = static_cast<int16_t>(0x7FFF);
+    return setMotorAngleLimitsMaxSpeed(motor, LEAVE, LEAVE, max_spd_001rad);
+}
+
+bool PiperInterfaceV2::setEndVelAccLimits(
+    int16_t max_linear_vel_001m_per_s, int16_t max_angular_vel_001rad_per_s, int16_t max_linear_acc_001m_per_s2,
+    int16_t max_angular_acc_001rad_per_s2
+)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::EndVelAccParamConfig;
+    msg.arm_end_vel_acc_param_config = ArmMsgCurrentEndVelAccParam{
+        max_linear_vel_001m_per_s, max_angular_vel_001rad_per_s,
+        max_linear_acc_001m_per_s2, max_angular_acc_001rad_per_s2,
+    };
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::setCrashProtectionLevels(uint8_t j1, uint8_t j2, uint8_t j3, uint8_t j4, uint8_t j5, uint8_t j6)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::CrashProtectionRatingConfig;
+    msg.arm_crash_protection_rating_config = ArmMsgCrashProtectionRatingConfig{j1, j2, j3, j4, j5, j6};
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::sendArmParamEnquiryAndConfig(
+    ParamEnquiry param_enquiry, ParamSetting param_setting, PeriodicFeedback48x periodic_feedback,
+    ConfigEffective end_load_effective, EndLoad set_end_load
+)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::ParamEnquiryAndConfig;
+    msg.arm_param_enquiry_and_config = ArmMsgParamEnquiryAndConfig{};
+    msg.arm_param_enquiry_and_config.param_enquiry = static_cast<uint8_t>(param_enquiry);
+    msg.arm_param_enquiry_and_config.param_setting = static_cast<uint8_t>(param_setting);
+    msg.arm_param_enquiry_and_config.data_feedback_0x48x = static_cast<uint8_t>(periodic_feedback);
+    msg.arm_param_enquiry_and_config.end_load_param_setting_effective = static_cast<uint8_t>(end_load_effective);
+    msg.arm_param_enquiry_and_config.set_end_load = static_cast<uint8_t>(set_end_load);
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::setGripperTeachingPendantParam(
+    uint8_t teaching_range_per, uint8_t max_range_mm, uint8_t teaching_friction
+)
+{
+    PiperMessage msg;
+    msg.type = ArmMsgType::GripperTeachingPendantParamConfig;
+    msg.arm_gripper_teaching_param_config =
+        ArmMsgGripperTeachingPendantParam{teaching_range_per, max_range_mm, teaching_friction};
+    return sendPiperMsg(msg);
+}
+
+bool PiperInterfaceV2::requestMasterArmMoveToHome(MasterArmHomeMode mode)
+{
+    if (!connected_.load(std::memory_order_relaxed))
+    {
+        std::cerr << "requestMasterArmMoveToHome: not connected.\n";
+        return false;
+    }
+    // 0x191 is sent verbatim from the python SDK; not currently routed through the encoder.
+    std::vector<uint8_t> payload(8, 0);
+    payload[0] = 0x01;
+    switch (mode)
+    {
+    case MasterArmHomeMode::RestoreMasterSlaveMode:
+        // {0x01, 0, 0, 0, 0, 0, 0, 0}
+        break;
+    case MasterArmHomeMode::MasterArmReturnToZero:
+        payload[1] = 0x01;
+        payload[2] = 0x01;
+        break;
+    case MasterArmHomeMode::BothMasterAndSlaveReturnToZero:
+        payload[2] = 0x01;
+        break;
+    }
+    return arm_can_->sendCanMessage(0x191, payload);
+}
+
 bool PiperInterfaceV2::searchAllMotorLimits()
 {
     for (size_t motor_num = 1; motor_num <= PiperMessage::num_joints; ++motor_num)
@@ -642,6 +889,31 @@ bool PiperInterfaceV2::sendFirmwareQuery()
         return false;
     }
     return true;
+}
+
+bool PiperInterfaceV2::requestFirmwareVersion() { return sendFirmwareQuery(); }
+
+std::optional<std::string> PiperInterfaceV2::getFirmwareVersion() const
+{
+    // Mirrors python piper_sdk's GetPiperFirmwareVersion: locate the "S-V" marker in the
+    // streamed firmware-info bytes and return the 8-byte tag that follows.
+    static constexpr char marker[] = "S-V";
+    static constexpr size_t marker_len = sizeof(marker) - 1; // exclude trailing null
+    static constexpr size_t version_len = 8;
+
+    std::lock_guard<std::mutex> lock(firmware_data_mutex_);
+    if (firmware_data_.size() < marker_len)
+        return std::nullopt;
+
+    for (size_t i = 0; i + marker_len <= firmware_data_.size(); ++i)
+    {
+        if (std::memcmp(firmware_data_.data() + i, marker, marker_len) == 0)
+        {
+            const size_t end = std::min(i + version_len, firmware_data_.size());
+            return std::string(firmware_data_.begin() + i, firmware_data_.begin() + end);
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace piper_cpp

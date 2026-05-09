@@ -94,6 +94,119 @@ enum class GripperSetZero : uint8_t
     SetZero = 0xAE, ///< Latch the current jaw position as the zero reference.
 };
 
+/// Emergency-stop / resume command on the 0x150 message.
+enum class EmergencyStop : uint8_t
+{
+    NoOp = 0x00,   ///< No-op.
+    Stop = 0x01,   ///< Trigger emergency stop -- the arm immediately cuts torque.
+    Resume = 0x02, ///< Resume from a previous emergency stop.
+};
+
+/// Trajectory control sub-command on the 0x150 message.
+enum class TrackCtrl : uint8_t
+{
+    Disable = 0x00,             ///< Disable trajectory control.
+    PausePlan = 0x01,           ///< Pause the current planned trajectory.
+    ContinueTrajectory = 0x02,  ///< Continue execution of the current trajectory.
+    ClearCurrent = 0x03,        ///< Clear the current trajectory.
+    ClearAll = 0x04,            ///< Clear all stored trajectories.
+    GetCurrentPlanned = 0x05,   ///< Request the currently planned trajectory.
+    Terminate = 0x06,           ///< Terminate execution.
+    StartTransmission = 0x07,   ///< Begin trajectory transmission.
+    EndTransmission = 0x08,     ///< End trajectory transmission.
+};
+
+/// Drag-teach sub-command on the 0x150 message.
+enum class DragTeachCtrl : uint8_t
+{
+    Disable = 0x00,            ///< Disable drag-teach.
+    StartRecord = 0x01,        ///< Enter drag-teach mode and start recording the trajectory.
+    EndRecord = 0x02,          ///< End recording and exit drag-teach mode.
+    Replay = 0x03,             ///< Replay the recorded trajectory.
+    Pause = 0x04,              ///< Pause replay.
+    Continue = 0x05,           ///< Continue replay after pause.
+    Terminate = 0x06,          ///< Terminate replay.
+    MoveToTrajectoryStart = 0x07, ///< Move the arm to the start of the recorded trajectory.
+};
+
+/// Coordinate-point sequence number for MoveC (circular pattern). After switching the arm to
+/// MoveC mode, send three end-pose commands paired with `StartPoint` / `MidPoint` / `EndPoint`
+/// to define the circle.
+enum class MoveCInstructionPoint : uint8_t
+{
+    Invalid = 0x00,
+    StartPoint = 0x01,
+    MidPoint = 0x02,
+    EndPoint = 0x03,
+};
+
+/// Per-motor index used by the motor enable/disable, joint config, etc. messages.
+/// 1-6 address an individual joint motor; 7 (or 0xFF) is the broadcast / "all motors".
+enum class MotorIndex : uint8_t
+{
+    Joint1 = 0x01,
+    Joint2 = 0x02,
+    Joint3 = 0x03,
+    Joint4 = 0x04,
+    Joint5 = 0x05,
+    Joint6 = 0x06,
+    AllJoints = 0x07,
+    Broadcast = 0xFF,
+};
+
+/// Param-enquiry sub-command on the 0x477 message. Triggers a one-shot reply on a related
+/// feedback ID.
+enum class ParamEnquiry : uint8_t
+{
+    None = 0x00,
+    EndVelAcc = 0x01,                ///< Reply on 0x478: end-effector velocity/acceleration limits.
+    CrashProtectionLevel = 0x02,     ///< Reply on 0x47B: per-joint crash protection level.
+    CurrentTrajectoryIndex = 0x03,   ///< Current trajectory index.
+    GripperTeachingPendantParam = 0x04, ///< Reply on 0x47E: gripper / teaching-pendant params (firmware V1.5-2+).
+};
+
+/// Param-setting sub-command on the 0x477 message.
+enum class ParamSetting : uint8_t
+{
+    None = 0x00,
+    EndVelAccToInitial = 0x01,        ///< Reset end-effector velocity/acceleration to initial values.
+    JointLimitsAndMaxSpdAndAccToDefault = 0x02, ///< Reset joint limits, max speed, max accel to defaults.
+};
+
+/// Periodic-feedback enable/disable for the 0x48x message family on the 0x477 command.
+enum class PeriodicFeedback48x : uint8_t
+{
+    None = 0x00,
+    Disable = 0x01,
+    Enable = 0x02,
+};
+
+/// End-load setting on the 0x477 command.
+enum class EndLoad : uint8_t
+{
+    NoLoad = 0x00,
+    HalfLoad = 0x01,
+    FullLoad = 0x02,
+    Invalid = 0x03,
+};
+
+/// Mode for the request-master-arm-move-to-home (`0x191`) command. Firmware V1.7-4+.
+enum class MasterArmHomeMode : uint8_t
+{
+    RestoreMasterSlaveMode = 0,     ///< Resume normal master/slave operation.
+    MasterArmReturnToZero = 1,      ///< Master arm only goes to home.
+    BothMasterAndSlaveReturnToZero = 2, ///< Master and follower both go to home.
+};
+
+/// "Effective" flag used on several config messages: 0x00 means "no change", 0xAE means
+/// "apply this field's value". Wrapped as a typed enum so the API surface is `bool`-like
+/// without conflating with the `uint8_t` enum-class wire bytes.
+enum class ConfigEffective : uint8_t
+{
+    NoChange = 0x00,
+    Apply = 0xAE,
+};
+
 } // namespace piper_cpp
 
 // 1. Circular Pattern Coordinate Number Update Control

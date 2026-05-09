@@ -124,6 +124,17 @@ int main()
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
 
+    // firmware version
+    auto fw_version = piper.getFirmwareVersion();
+    if (fw_version)
+    {
+        std::cout << "Firmware version: " << *fw_version << std::endl;
+    }
+    else
+    {
+        std::cout << "Firmware version not available yet.\n";
+    }
+
     // 4) Clean up
     piper.disconnectPort(std::chrono::milliseconds{200});
     std::cout << "Disconnected.\n";

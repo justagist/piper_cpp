@@ -4,6 +4,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -103,11 +104,29 @@ public:
         return StateSnapshot(arm_instruction_response_);
     }
 
+    /// Raw firmware-info bytes that the arm has streamed in response to the firmware-version
+    /// query. The query is fired once automatically by `piperInit()` / `connectPort()`, so this
+    /// buffer is populated within a few hundred milliseconds of opening the port.
+    /// For most use cases prefer `getFirmwareVersion()` -- this raw accessor is for inspection.
     std::vector<uint8_t> getFirmwareData() const
     {
         std::lock_guard<std::mutex> lock(firmware_data_mutex_);
         return firmware_data_;
     }
+
+    /// Parsed firmware-version string. Looks for the `"S-V"` marker in the streamed firmware
+    /// data and returns the 8-byte tag that follows it, e.g. `"S-V1.7-4"`.
+    ///
+    /// Returns an empty optional if the marker hasn't been received yet (e.g. you've called
+    /// this within the first ~100 ms of `connectPort` and the bytes haven't arrived). If you
+    /// need to re-query (after a firmware-update on the arm, say), call
+    /// `requestFirmwareVersion()` and read this again a moment later.
+    std::optional<std::string> getFirmwareVersion() const;
+
+    /// Re-send the firmware-version query (CAN ID `0x4AF`). The reply trickles in over the next
+    /// few frames into the firmware-data buffer; read it via `getFirmwareVersion()`. Normally
+    /// not needed because `connectPort` already fires this once.
+    bool requestFirmwareVersion();
 
     std::vector<std::array<double, 6>> getCalculatedFeedbackFK() const;
 
@@ -299,6 +318,176 @@ public:
     /// One-shot: send this once, then go back to `controlGripper()` calls in your loop.
     /// @return true on successful CAN send.
     bool setGripperZero();
+
+    /// Command target angles for all six joints. The arm splits the targets across three CAN
+    /// frames (joints 1+2, 3+4, 5+6); this method sends all three in sequence.
+    ///
+    /// Pair this with `setMoveMode(MoveMode::MoveJ)` (or `sendMotionCtrl2(...)` once at startup);
+    /// the arm uses its joint-space interpolator to move toward each commanded target. Like the
+    /// gripper, the arm only acts on these commands when the motion-mode is set to `CanCmd` --
+    /// see the motion-mode section above.
+    ///
+    /// @param joint_1_millideg  Joint 1 target in 0.001 degrees (e.g. 30000 = 30 degrees).
+    /// @param joint_2_millideg  Joint 2 target in 0.001 degrees.
+    /// @param joint_3_millideg  Joint 3 target in 0.001 degrees.
+    /// @param joint_4_millideg  Joint 4 target in 0.001 degrees.
+    /// @param joint_5_millideg  Joint 5 target in 0.001 degrees.
+    /// @param joint_6_millideg  Joint 6 target in 0.001 degrees.
+    /// @return true if all three CAN frames were sent successfully.
+    bool controlJoints(
+        int32_t joint_1_millideg, int32_t joint_2_millideg, int32_t joint_3_millideg, int32_t joint_4_millideg,
+        int32_t joint_5_millideg, int32_t joint_6_millideg
+    );
+
+    /// Command an end-effector pose target in cartesian space. Splits across three CAN frames
+    /// (X+Y, Z+RX, RY+RZ). Pair with `setMoveMode(MoveMode::MoveP)` (point-to-point),
+    /// `MoveMode::MoveL` (linear), or `MoveMode::MoveC` (circular -- requires a sequence of
+    /// `moveCAxisUpdate(StartPoint/MidPoint/EndPoint)` calls).
+    ///
+    /// @param x_um   Target X in 0.001 mm.
+    /// @param y_um   Target Y in 0.001 mm.
+    /// @param z_um   Target Z in 0.001 mm.
+    /// @param rx_md  Rotation about X in 0.001 degrees.
+    /// @param ry_md  Rotation about Y in 0.001 degrees.
+    /// @param rz_md  Rotation about Z in 0.001 degrees.
+    /// @return true if all three CAN frames were sent successfully.
+    bool controlEndPose(int32_t x_um, int32_t y_um, int32_t z_um, int32_t rx_md, int32_t ry_md, int32_t rz_md);
+
+    /// MIT joint control for a single joint. Sends one of the per-joint MIT command frames.
+    /// Pair with `setMitMode(MitMode::MIT)` and `setMoveMode(MoveMode::MoveM)`. All scalar
+    /// inputs are floats in physical units; the encoder converts to the protocol's packed
+    /// fixed-point representation internally.
+    ///
+    /// @param motor_num   Joint index 1-6.
+    /// @param pos_rad     Target position in radians, range [-12.5, 12.5].
+    /// @param vel         Velocity setpoint, range [-45.0, 45.0].
+    /// @param kp          Position-error gain, reference 10.0, range [0.0, 500.0].
+    /// @param kd          Velocity-error gain, reference 0.8, range [-5.0, 5.0].
+    /// @param torque      Feed-forward torque, range [-8.0, 8.0].
+    /// @return true on successful CAN send. Returns false if motor_num is out of range.
+    bool controlJointMit(uint8_t motor_num, double pos_rad, double vel, double kp, double kd, double torque);
+
+    // ---- Safety / mode commands (CAN ID 0x150 -- "MotionCtrl_1") ----------------------------
+
+    /// Send the 0x150 motion control 1 message: emergency-stop, trajectory control, and drag-
+    /// teach control in one frame. For the common single-purpose calls use the convenience
+    /// methods `emergencyStop()` and `resetPiper()` below.
+    bool sendMotionCtrl1(
+        EmergencyStop emergency_stop = EmergencyStop::NoOp, TrackCtrl track_ctrl = TrackCtrl::Disable,
+        DragTeachCtrl drag_teach_ctrl = DragTeachCtrl::Disable
+    );
+
+    /// Trigger emergency stop, or resume from a previous emergency stop.
+    /// @warning `EmergencyStop::Stop` cuts torque immediately; the arm will fall under gravity.
+    bool emergencyStop(EmergencyStop mode = EmergencyStop::Stop);
+
+    /// Reset the arm: immediately drops power to all joints (the arm will fall under gravity)
+    /// and clears all error and internal-state flags. Equivalent to sending a power cycle in
+    /// software. After reset you'll need to `enableRobot()` and re-establish motion mode.
+    bool resetPiper();
+
+    // ---- Circular-pattern coordinate update -------------------------------------------------
+
+    /// MoveC mode coordinate-point update. Use after `setMoveMode(MoveMode::MoveC)` to define
+    /// the three points of a circular path: send `controlEndPose(StartXYZ...)` followed by
+    /// `moveCAxisUpdate(StartPoint)`, then mid, then end. The arm interpolates a circle through
+    /// the three.
+    bool moveCAxisUpdate(MoveCInstructionPoint point);
+
+    // ---- Per-motor enable/disable -----------------------------------------------------------
+
+    /// Enable a specific motor. Pass `MotorIndex::AllJoints` (the default) to broadcast --
+    /// equivalent to `enableRobot()`.
+    bool enableMotor(MotorIndex motor = MotorIndex::AllJoints);
+
+    /// Disable a specific motor. Pass `MotorIndex::AllJoints` (the default) to broadcast --
+    /// equivalent to `disableRobot()`. The motor's joint will fall under gravity.
+    bool disableMotor(MotorIndex motor = MotorIndex::AllJoints);
+
+    // ---- Joint config (CAN ID 0x475) --------------------------------------------------------
+
+    /// Send the 0x475 joint config message: any combination of "set current pos as zero",
+    /// configure max acceleration, or clear joint error.
+    ///
+    /// @param motor              Which joint motor (1-6 or AllJoints).
+    /// @param set_zero           Latch the current position as the joint's zero reference.
+    /// @param acc_effective      If `Apply`, `max_joint_acc` is committed; otherwise the field is ignored.
+    /// @param max_joint_acc      Max joint acceleration in 0.01 rad/s^2 (range 0-500). Use 0x7FFF to leave unchanged (firmware V1.5-2+).
+    /// @param clear_error        Clear any latched joint error code.
+    bool sendJointConfig(
+        MotorIndex motor, ConfigEffective set_zero, ConfigEffective acc_effective, uint16_t max_joint_acc,
+        ConfigEffective clear_error
+    );
+
+    /// Convenience: latch the current position as the given joint's zero reference.
+    bool setJointAsCurrentZero(MotorIndex motor);
+
+    /// Convenience: set just the max acceleration for one joint, leaving zero/error state alone.
+    /// @param max_joint_acc      Max joint acceleration in 0.01 rad/s^2. Range 0-500 (= 0-5 rad/s^2).
+    bool setJointMaxAcc(MotorIndex motor, uint16_t max_joint_acc);
+
+    /// Convenience: clear the latched error code on a single joint.
+    bool clearJointError(MotorIndex motor);
+
+    // ---- Motor angle/speed limits (CAN ID 0x474) --------------------------------------------
+
+    /// Set per-motor angle limits and maximum joint speed in one frame. Use 0x7FFF on any
+    /// field to leave it unchanged (firmware V1.5-2+).
+    /// @param motor              Joint motor (1-6).
+    /// @param max_angle_01deg    Max angle limit in 0.1 degrees.
+    /// @param min_angle_01deg    Min angle limit in 0.1 degrees.
+    /// @param max_spd_001rad     Max joint speed in 0.001 rad/s. Range 0-3000.
+    bool setMotorAngleLimitsMaxSpeed(
+        MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd_001rad
+    );
+
+    /// Convenience: set just the max joint speed for a single motor.
+    bool setMotorMaxSpeed(MotorIndex motor, int16_t max_spd_001rad);
+
+    // ---- End-effector velocity/acceleration (CAN ID 0x479) ----------------------------------
+
+    /// Set end-effector velocity/acceleration limits.
+    /// @param max_linear_vel_001m_per_s   Max linear velocity in 0.001 m/s.
+    /// @param max_angular_vel_001rad_per_s   Max angular velocity in 0.001 rad/s.
+    /// @param max_linear_acc_001m_per_s2  Max linear acceleration in 0.001 m/s^2.
+    /// @param max_angular_acc_001rad_per_s2  Max angular acceleration in 0.001 rad/s^2.
+    bool setEndVelAccLimits(
+        int16_t max_linear_vel_001m_per_s, int16_t max_angular_vel_001rad_per_s,
+        int16_t max_linear_acc_001m_per_s2, int16_t max_angular_acc_001rad_per_s2
+    );
+
+    // ---- Crash protection (CAN ID 0x47A) ----------------------------------------------------
+
+    /// Set per-joint collision-protection sensitivity.
+    /// @param j1..j6  Level 0-8 per joint. 0 disables collision detection on that joint;
+    /// higher values are more sensitive.
+    bool setCrashProtectionLevels(uint8_t j1, uint8_t j2, uint8_t j3, uint8_t j4, uint8_t j5, uint8_t j6);
+
+    // ---- Param enquiry/config (CAN ID 0x477) ------------------------------------------------
+
+    /// Multi-purpose query/config message. Different field combinations request different
+    /// firmware behaviours -- see the individual enum values for what each one does.
+    bool sendArmParamEnquiryAndConfig(
+        ParamEnquiry param_enquiry = ParamEnquiry::None, ParamSetting param_setting = ParamSetting::None,
+        PeriodicFeedback48x periodic_feedback = PeriodicFeedback48x::None,
+        ConfigEffective end_load_effective = ConfigEffective::NoChange, EndLoad set_end_load = EndLoad::Invalid
+    );
+
+    // ---- Gripper teaching-pendant config (CAN ID 0x47D) -------------------------------------
+
+    /// Configure the optional teaching-pendant gripper accessory. Firmware V1.5-2+.
+    /// @param teaching_range_per   Travel range coefficient in [100, 200] %.
+    /// @param max_range_mm         Max control travel limit in mm. Documented values: 0, 70, 100.
+    /// @param teaching_friction    Drag-teach friction coefficient in [1, 10].
+    bool setGripperTeachingPendantParam(
+        uint8_t teaching_range_per = 100, uint8_t max_range_mm = 70, uint8_t teaching_friction = 1
+    );
+
+    // ---- Request master arm to home (CAN ID 0x191) ------------------------------------------
+
+    /// Send the master-arm "go home" request. Firmware V1.7-4+. Used for two-arm leader/follower
+    /// setups -- on a single arm in slave mode this command has no effect.
+    bool requestMasterArmMoveToHome(MasterArmHomeMode mode);
 
 private:
     /// High‐resolution timestamp in seconds
