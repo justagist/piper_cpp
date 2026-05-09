@@ -5,6 +5,20 @@
 #include <iostream>
 #include <thread>
 
+// Lowest-level read smoke test. Doesn't use any Piper protocol decoding -- just opens
+// `can0` via `StdCanInterface` and prints every raw CAN frame as hex. Equivalent to
+// `candump can0`, but goes through the same SocketCAN wrapper the rest of the SDK uses, so
+// it's useful for confirming that the wrapper itself works on a given system.
+//
+// Use this if you suspect the SocketCAN wrapper is broken (e.g. frames visible to candump
+// but not to your program). For protocol-level diagnostics use `piper_parser_v2_read_test`;
+// for the full SDK use `piper_interface_v2_read_test`.
+//
+// Usage:
+//   piper_cpp_std_can_interface_read
+//
+// Ctrl+C exits cleanly. No flags. The arm (or any CAN traffic source) must be on `can0`.
+
 using namespace piper_cpp;
 
 bool stop = false;

@@ -3,6 +3,19 @@
 #include <iostream>
 #include <string>
 
+// Enable or disable all six joint motors plus the gripper motor (broadcast 0x471). Polls
+// `isEnabled()` until the requested state is reflected in the per-motor low-speed feedback,
+// which usually takes a few hundred milliseconds.
+//
+// IMPORTANT: `--disable` cuts torque to all motors, so the arm will fall under gravity unless
+// physically supported. Catch the wrist or rest the arm before disabling.
+//
+// Usage:
+//   piper_enable               # enable all joints + gripper motor
+//   piper_enable --disable     # disable all joints + gripper motor
+//
+// Note: this controls the joint *motors* only; the gripper has a separate position-control
+// enable inside the 0x159 command frame -- see `piper_gripper_sweep` for the full story.
 int main(int argc, char* argv[])
 {
     bool disable = false;

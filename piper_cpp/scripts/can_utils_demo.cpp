@@ -1,5 +1,28 @@
 #include "piper_cpp/can_utils.h"
 #include <iostream>
+
+// CAN-bus utilities demo / multi-tool. Wraps the four helpers in `piper_cpp::can_utils`:
+//
+//   --find                List all CAN-capable USB adapters detected on the host (vendor-id +
+//                         serial-number pairs). Useful for confirming the arm's adapter is
+//                         present before trying to bring it up.
+//
+//   --active              List all CAN interfaces that are currently UP and ready to talk.
+//
+//   --activate [timeout]  Bring up every detected CAN port at 1 Mbit/s. Optional integer
+//                         `timeout` argument is passed to the underlying helper (seconds) --
+//                         leave it off for the default. Equivalent to running `can_activate`.
+//
+//   --get-serial <iface>  Print the USB serial number of the adapter behind a given CAN
+//                         interface (e.g. `can0`). Useful for matching specific interfaces to
+//                         specific physical adapters in multi-arm setups.
+//
+// Usage examples:
+//   can_utils_demo --find
+//   can_utils_demo --active
+//   can_utils_demo --activate
+//   can_utils_demo --activate 5
+//   can_utils_demo --get-serial can0
 int main(int argc, char* argv[])
 {
     if (argc < 2)

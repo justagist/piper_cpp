@@ -5,6 +5,23 @@
 #include <iostream>
 #include <thread>
 
+// Omnibus read-side smoke test. Connects to `can0`, lets the parser run for ~10 seconds, and
+// prints every state getter on the interface every 500 ms. Equivalent to running each of the
+// `piper_read_*.py` demos in the python SDK at once.
+//
+// What gets printed each tick:
+//   - Arm status, end-pose, joint angles, gripper state
+//   - Per-joint high-speed and low-speed feedback
+//   - Current end vel/acc, crash protection rating, gripper teaching pendant params
+//   - Per-motor angle/speed/acceleration limits (single + aggregate)
+//   - Last-seen joint/gripper/motion-mode control commands echoed on the bus
+//   - Forward kinematics computed from both feedback and control values
+//   - isEnabled / isHealthy flags
+//
+// Usage:
+//   piper_interface_v2_read_test
+//
+// No flags. The arm must be on `can0` and the bus already up (run `can_activate` first if not).
 int main()
 {
     // 1) Create interface on can0:

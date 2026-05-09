@@ -6,6 +6,19 @@
 #include <iostream>
 #include <thread>
 
+// Low-level parser smoke test. Bypasses `PiperInterfaceV2` and exercises `PiperParserV2`
+// directly: reads raw CAN frames from `can0` via `StdCanInterface` and pretty-prints the
+// decoded message type and payload for every frame.
+//
+// Use this when debugging a parsing-side problem (mismatched ID, wrong byte layout, etc.)
+// rather than for normal control. For full state caching + getters, use
+// `piper_interface_v2_read_test`.
+//
+// Usage:
+//   piper_parser_v2_read_test
+//
+// Ctrl+C exits cleanly. No flags. The arm must be on `can0` and the bus already up.
+
 using namespace piper_cpp;
 
 bool stop = false;
