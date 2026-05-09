@@ -193,7 +193,8 @@ inline std::string toString(MotionStatus m)
 
 } // namespace ArmMsgFeedbackStatusEnum
 
-// Error status
+/// Per-joint error-status bitfield carried inside the arm-status feedback (0x2A7). Each flag
+/// is set when the corresponding fault is currently active on that joint.
 struct ArmErrStatus
 {
     bool joint_1_angle_limit = false;

@@ -23,12 +23,12 @@ struct PiperMessage
     static constexpr size_t raw_data_len = 8;
     static constexpr size_t num_joints = 6;
 
-    uint16_t can_id = 0;
-    uint8_t raw_data[raw_data_len] = {0}; // Raw data from CAN frame
-    ArmMsgType type = ArmMsgType::Unknown;
-    double timestamp = 0.0; // Timestamp in seconds
+    uint16_t can_id = 0;                    ///< Wire CAN ID associated with this message.
+    uint8_t raw_data[raw_data_len] = {0};   ///< Raw payload bytes from the source CAN frame.
+    ArmMsgType type = ArmMsgType::Unknown;  ///< Logical message type; selects which payload union member is valid.
+    double timestamp = 0.0;                 ///< Reception timestamp (Unix epoch, seconds).
 
-    // ----------- Feedback messages -----------
+    // ---- Feedback payload slots (one of these is valid per `type`) ----
     ArmMsgFeedbackStatus arm_status_msgs;
     ArmMsgEndPose arm_end_pose;
     ArmMsgJointValues arm_joint_feedback;
@@ -42,15 +42,14 @@ struct PiperMessage
     ArmMsgFeedbackAllCurrentMotorMaxAccLimit all_motor_max_acc_limit;
     ArmMsgCrashProtectionRatingConfig arm_crash_protection_rating_feedback;
 
-    // High-speed feedback, 6 joints
+    /// High-speed feedback for each of the six joints, indexed 0..5.
     std::array<ArmMsgFeedbackHighSpd, num_joints> high_spd_feedbacks;
-    // Low-speed feedback, 6 joints
+    /// Low-speed feedback for each of the six joints, indexed 0..5.
     std::array<ArmMsgFeedbackLowSpd, num_joints> low_spd_feedbacks;
-    // Per-joint velocity/acceleration feedback (for "joint_vel_acc" type) — 6 slots for joint 1~6
+    /// Per-joint velocity/acceleration feedback (for the joint_vel_acc message type), indexed 0..5.
     std::array<ArmMsgFeedbackJointVelAcc, num_joints> joint_vel_accs;
 
-    // ------------ Transmit messages ------------
-    // TODO: Add transmit types as C++ structs.
+    // ---- Transmit payload slots (one of these is populated when `type` is a tx type) ----
     ArmMsgMotionCtrl_1 arm_motion_ctrl_1;
     ArmMsgMotionCtrl_2 arm_motion_ctrl_2;
     ArmMsgEndPose arm_motion_ctrl_cartesian;

@@ -7,23 +7,27 @@
 namespace piper_cpp
 {
 
+/// Gripper feedback payload (CAN ID 0x2A8). Carries the measured jaw position, applied effort,
+/// and a packed status byte that's decoded into per-bit flags below.
 struct ArmMsgFeedbackGripper
 {
-    int32_t grippers_angle{0};  // unit: 0.001mm
-    int16_t grippers_effort{0}; // unit: 0.001 N*m
-    uint8_t status_code{0};     // raw status code byte
+    int32_t grippers_angle{0};  ///< Measured jaw stroke, 0.001 mm.
+    int16_t grippers_effort{0}; ///< Measured gripper torque, 0.001 N*m.
+    uint8_t status_code{0};     ///< Raw status byte; decoded into `foc_status` by `updateFocStatus()`.
 
-    // Nested struct to decode status bits
+    /// Per-bit decode of `status_code`. All "fault" bits (voltage_too_low, overheating, etc.)
+    /// follow the convention "false = normal, true = fault triggered". `driver_enable_status`
+    /// and `homing_status` follow "true = active state, false = inactive".
     struct FOCStatus
     {
-        bool voltage_too_low = false;
-        bool motor_overheating = false;
-        bool driver_overcurrent = false;
-        bool driver_overheating = false;
-        bool sensor_status = false;
-        bool driver_error_status = false;
-        bool driver_enable_status = false;
-        bool homing_status = false;
+        bool voltage_too_low = false;     ///< Bit 0: power voltage below threshold.
+        bool motor_overheating = false;   ///< Bit 1: motor over-temperature trip.
+        bool driver_overcurrent = false;  ///< Bit 2: driver over-current trip.
+        bool driver_overheating = false;  ///< Bit 3: driver over-temperature trip.
+        bool sensor_status = false;       ///< Bit 4: sensor fault (false = normal).
+        bool driver_error_status = false; ///< Bit 5: driver error latched.
+        bool driver_enable_status = false; ///< Bit 6: gripper position-control loop active.
+        bool homing_status = false;       ///< Bit 7: gripper has been zeroed at least once.
 
         void fromStatusCode(uint8_t code)
         {
@@ -52,9 +56,11 @@ struct ArmMsgFeedbackGripper
         }
     };
 
-    FOCStatus foc_status;
+    FOCStatus foc_status; ///< Decoded view of `status_code`; populated by `updateFocStatus()`.
 
-    // Call this after setting status_code!
+    /// Decode `status_code` into the per-bit flags in `foc_status`. The parser calls this
+    /// automatically after assigning `status_code`; only invoke directly if you've manually
+    /// changed `status_code`.
     void updateFocStatus() { foc_status.fromStatusCode(status_code); }
 
     std::string toString() const

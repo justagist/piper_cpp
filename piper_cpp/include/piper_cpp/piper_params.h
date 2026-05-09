@@ -34,7 +34,7 @@ public:
         J5,
         J6
     };
-    using Range = std::array<double, 2>; // {min, max}
+    using Range = std::array<double, 2>; ///< {min, max}.
     using JointLimits = std::array<Range, 6>;
 
     struct PiperParams
@@ -101,9 +101,10 @@ public:
     }
 
     // ----- Helpers -----
+    /// Convert a joint name string ("j1".."j6", case-insensitive) to a `Joint` enum value.
+    /// @throws std::invalid_argument if the name doesn't match.
     static Joint toJoint(const std::string& name)
     {
-        // Accepts: "j1".."j6" (case-insensitive)
         if (name.size() != 2 || (name[0] != 'j' && name[0] != 'J'))
             throw std::invalid_argument("joint_name must be j1..j6");
 
@@ -113,7 +114,8 @@ public:
 
         return static_cast<Joint>(idx - '1');
     }
-    // Clamp a joint angle expressed in milli-degrees (0.001 deg)
+    /// Clamp a joint angle expressed in milli-degrees (0.001 deg) to the configured limits for
+    /// the given joint. Pass `enabled = false` to bypass the clamp and return the input as-is.
     int clampJointMilliDeg(Joint j, int value_mdeg, bool enabled = true) const
     {
         if (!enabled)
@@ -125,7 +127,8 @@ public:
         return static_cast<int>(std::clamp<long>(value_mdeg, jmin_mdeg, jmax_mdeg));
     }
 
-    // Clamp a joint angle in radians (native units)
+    /// Clamp a joint angle in radians (the SDK's native unit) to the configured limits for
+    /// the given joint. Pass `enabled = false` to bypass the clamp.
     double clampJointRad(Joint j, double value_rad, bool enabled = true) const
     {
         if (!enabled)
@@ -134,7 +137,8 @@ public:
         return std::clamp(value_rad, mn_rad, mx_rad);
     }
 
-    // Clamp gripper opening expressed in micrometers (µm)
+    /// Clamp gripper jaw opening expressed in micrometres (0.001 mm) to the configured range.
+    /// Pass `enabled = false` to bypass the clamp.
     int clampGripperMicrometers(int value_um, bool enabled = true) const
     {
         if (!enabled)
@@ -145,7 +149,8 @@ public:
         return static_cast<int>(std::clamp<long>(value_um, gmin_um, gmax_um));
     }
 
-    // Clamp gripper opening in meters (native units)
+    /// Clamp gripper jaw opening in metres (native units) to the configured range. Pass
+    /// `enabled = false` to bypass the clamp.
     double clampGripperMeters(double value_m, bool enabled = true) const
     {
         if (!enabled)
@@ -156,7 +161,7 @@ public:
 
 private:
     PiperParamManager() { resetDefaults(); }
-    // Defaults (radians / meters), matching your Python docstring
+    // Defaults (radians / meters)
     static constexpr JointLimits kDefaultsJointRad{
         {
          Range{-2.6179, 2.6179},  // j1  [-150°, +150°]

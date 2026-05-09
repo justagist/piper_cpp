@@ -7,10 +7,11 @@
 namespace piper_cpp
 {
 
+/// Per-motor max-acceleration feedback. Sent in response to a query.
 struct ArmMsgFeedbackCurrentMotorMaxAccLimit
 {
-    uint8_t joint_motor_num{0}; // Joint motor number [1..6]
-    int16_t max_joint_acc{0};   // Maximum joint acceleration (0.001 rad/s^2)
+    uint8_t joint_motor_num{0}; ///< Motor index 1-6.
+    int16_t max_joint_acc{0};   ///< Configured max joint acceleration, 0.001 rad/s^2.
 
     std::string toString() const
     {
@@ -23,7 +24,8 @@ struct ArmMsgFeedbackCurrentMotorMaxAccLimit
     }
 };
 
-// Container for all 6 motors' acceleration feedback (indexed from 0 to 5)
+/// Aggregate of all six motors' max-acceleration feedback, indexed `motor[0]..motor[5]` for
+/// joints 1-6. Filled in as the per-motor query replies stream in during `piperInit()`.
 struct ArmMsgFeedbackAllCurrentMotorMaxAccLimit
 {
     ArmMsgFeedbackCurrentMotorMaxAccLimit motor[6];
@@ -43,16 +45,18 @@ struct ArmMsgFeedbackAllCurrentMotorMaxAccLimit
     }
 };
 
+/// Per-joint high-speed feedback (CAN IDs 0x251..0x256, one per joint, ~200 Hz).
 struct ArmMsgFeedbackHighSpd
 {
-    uint32_t can_id{0};     // CAN ID: 0x251~0x256
-    int16_t motor_speed{0}; // Motor speed (0.001 rad/s)
-    uint16_t current{0};    // Motor current (0.001 A)
-    int32_t pos{0};         // Motor position (rad)
-    float effort{0.0f};     // Torque, derived, unit 0.001 N·m
+    uint32_t can_id{0};     ///< Source CAN ID 0x251..0x256, identifying which joint this is.
+    int16_t motor_speed{0}; ///< Motor speed, 0.001 rad/s.
+    uint16_t current{0};    ///< Motor current, 0.001 A.
+    int32_t pos{0};         ///< Raw motor position (encoder units; convert via DH if needed).
+    float effort{0.0f};     ///< Derived torque, 0.001 N*m. Populated by `calcEffort()`.
 
-    // Call this function to calculate 'effort' using current and can_id (should be called after setting can_id &
-    // current)
+    /// Estimate the joint torque from the motor current using the manufacturer's per-joint
+    /// coefficient table. Joints 1-3 and 4-6 use different gear ratios. Call after assigning
+    /// `can_id` and `current`; the parser does this automatically when decoding.
     float calcEffort()
     {
         static constexpr float COEFFICIENT_1_3 = 1.18125f;
@@ -80,9 +84,11 @@ struct ArmMsgFeedbackHighSpd
     }
 };
 
+/// Aggregate of high-speed feedback from all six joints. Each entry is updated independently
+/// as 0x251..0x256 frames arrive on the bus.
 struct ArmMsgFeedbackHighSpdArray
 {
-    std::array<ArmMsgFeedbackHighSpd, 6> high_spd_feedbacks; // 6 joints
+    std::array<ArmMsgFeedbackHighSpd, 6> high_spd_feedbacks; ///< Per-joint feedback, indexed 0..5 for joints 1..6.
 
     std::string toString() const
     {
@@ -95,26 +101,30 @@ struct ArmMsgFeedbackHighSpdArray
     }
 };
 
+/// Per-joint low-speed feedback (CAN IDs 0x261..0x266, one per joint, ~40 Hz). Carries
+/// thermal/electrical health metrics and the per-bit driver status flags.
 struct ArmMsgFeedbackLowSpd
 {
-    uint32_t can_id{0};         // CAN ID: 0x261~0x266
-    uint16_t vol{0};            // Bus voltage (0.1 V)
-    int16_t foc_temp{0};        // Drive temperature (°C)
-    int8_t motor_temp{0};       // Motor temperature (°C)
-    uint8_t foc_status_code{0}; // Drive status code (bit field, see below)
-    uint16_t bus_current{0};    // Bus current (0.001 A)
+    uint32_t can_id{0};         ///< Source CAN ID 0x261..0x266, identifying which joint this is.
+    uint16_t vol{0};            ///< Bus voltage, 0.1 V units.
+    int16_t foc_temp{0};        ///< Driver IC temperature, deg C.
+    int8_t motor_temp{0};       ///< Motor stator temperature, deg C.
+    uint8_t foc_status_code{0}; ///< Raw status byte; decoded into `foc_status` by `updateStatusFromCode()`.
+    uint16_t bus_current{0};    ///< Driver bus current, 0.001 A.
 
-    // Decoded status bits (filled after parsing foc_status_code)
+    /// Per-bit decode of `foc_status_code`. Each fault bit follows the convention
+    /// "false = normal, true = fault triggered"; `driver_enable_status` follows
+    /// "true = motor energised".
     struct FOC_Status
     {
-        bool voltage_too_low{false};
-        bool motor_overheating{false};
-        bool driver_overcurrent{false};
-        bool driver_overheating{false};
-        bool collision_status{false};
-        bool driver_error_status{false};
-        bool driver_enable_status{false};
-        bool stall_status{false};
+        bool voltage_too_low{false};      ///< Bit 0: power voltage below threshold.
+        bool motor_overheating{false};    ///< Bit 1: motor over-temperature trip.
+        bool driver_overcurrent{false};   ///< Bit 2: driver over-current trip.
+        bool driver_overheating{false};   ///< Bit 3: driver over-temperature trip.
+        bool collision_status{false};     ///< Bit 4: collision-protection trip.
+        bool driver_error_status{false};  ///< Bit 5: driver error latched.
+        bool driver_enable_status{false}; ///< Bit 6: motor is enabled and torque-controlled.
+        bool stall_status{false};         ///< Bit 7: motor stalled (commanded but not moving).
 
         void fromCode(uint8_t code)
         {
@@ -160,9 +170,11 @@ struct ArmMsgFeedbackLowSpd
     }
 };
 
+/// Aggregate of low-speed feedback from all six joints. Each entry is updated independently
+/// as 0x261..0x266 frames arrive on the bus.
 struct ArmMsgFeedbackLowSpdArray
 {
-    std::array<ArmMsgFeedbackLowSpd, 6> low_spd_feedbacks; // 6 joints
+    std::array<ArmMsgFeedbackLowSpd, 6> low_spd_feedbacks; ///< Per-joint feedback, indexed 0..5 for joints 1..6.
 
     std::string toString() const
     {

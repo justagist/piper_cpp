@@ -22,83 +22,172 @@ namespace piper_cpp
 class PiperInterfaceV2
 {
 public:
-    /// Constructor
+    /// Construct the interface but do not yet open the CAN port -- call `connectPort()` when
+    /// you're ready to start talking to the arm.
+    ///
+    /// @param can_name           Name of the SocketCAN interface (e.g. `"can0"`).
+    /// @param judge_flag         If true, run a CAN-bus health check during `connectPort` --
+    ///                           verifies the bus is up and frames are flowing before proceeding.
+    /// @param auto_init          If true, the underlying SocketCAN interface is brought up
+    ///                           automatically; otherwise the caller is expected to have
+    ///                           configured the interface (e.g. via `ip link set can0 up`).
+    /// @param dh_offset          If true, applies the manufacturer's DH-parameter offsets in
+    ///                           the FK calculation. Leave true unless you have your own model.
+    /// @param sdk_joint_limit    If true, joint feedback values are clamped to the SDK's known
+    ///                           per-joint limits as they are received. Defensive but lossy --
+    ///                           leave false for raw values.
+    /// @param sdk_gripper_limit  If true, gripper feedback values are clamped to the SDK's known
+    ///                           limits as they are received. Defensive but lossy -- leave false
+    ///                           for raw values.
     PiperInterfaceV2(
         std::string can_name, bool judge_flag = true, bool auto_init = true, bool dh_offset = true,
         bool sdk_joint_limit = false, bool sdk_gripper_limit = false
     );
 
+    /// Destructor; calls `disconnectPort()` if it hasn't been called already.
     ~PiperInterfaceV2();
 
-    /// Open the CAN port, start parsing threads, and optionally send init queries.
-    /// Returns true if the port was opened successfully (or was already open).
+    /// Open the CAN port, optionally fire the initial state-query commands, and optionally
+    /// start the background read thread. Idempotent -- calling on an already-connected
+    /// interface is a no-op that returns true.
+    ///
+    /// After this returns, the state getters (`getArmJointStates()`, `getGripperStates()`, ...)
+    /// will start populating within a few hundred milliseconds.
+    ///
+    /// @param can_init       If true, run the CAN bus health check after opening. Recommended
+    ///                       when you suspect the bus or arm may not be up.
+    /// @param piper_init     If true, fire the initial query commands (motor limit search,
+    ///                       firmware version) so the corresponding state caches start filling.
+    ///                       Leave true unless you intend to query manually.
+    /// @param start_threads  If true, start the background CAN-read thread that drives state
+    ///                       caching. Leave true for normal use; pass false only if you're
+    ///                       integrating the read loop into your own thread / event system.
+    /// @return true if the port opened (or was already open); false on initialisation failure.
     bool connectPort(bool can_init = false, bool piper_init = true, bool start_threads = true);
 
-    /// Gracefully stop threads and close the CAN port.
+    /// Stop the background read thread (if running) and close the CAN port. Joins the read
+    /// thread synchronously up to `timeout`; the destructor calls this with the default.
+    /// Idempotent.
     void disconnectPort(std::chrono::milliseconds timeout = std::chrono::milliseconds{100});
 
-    /// Send the three "search" commands for joint limits, acc limits, firmware.
+    /// Fire the one-shot startup queries: per-motor angle/speed limits, per-motor acceleration
+    /// limits, and the firmware-version query. The corresponding state caches start populating
+    /// within a few CAN frames. Already called from `connectPort` when `piper_init=true`, so
+    /// you typically don't need to call this directly -- use it if you've reset the arm and
+    /// want to re-discover its limits.
     void piperInit();
 
+    // ---- State getters --------------------------------------------------------------------
+    //
+    // All getters below return a `StateSnapshot<T>` that bundles the latest received message
+    // payload with metadata about its freshness:
+    //   - `value`        : the payload itself
+    //   - `timestamp`    : Unix-epoch timestamp (in seconds, double) of the last update
+    //   - `hz`           : measured update rate based on inter-arrival time
+    //   - `is_valid`     : sticky -- true once at least one frame has been received
+    //   - `is_healthy`   : true if a frame has arrived in the last ~1 second
+    //
+    // `is_valid` is only false during the brief window between `connectPort` returning and the
+    // first matching CAN frame arriving. Use `is_healthy` to detect a stalled or dropped feed.
+
+    /// Latest arm status: control mode, motion status, error codes, teaching state, etc.
+    /// Updates at ~200 Hz when the arm is connected. Drives `getArmHealth()`'s status field.
     StateSnapshot<ArmMsgFeedbackStatus> getArmStatus() const { return StateSnapshot(arm_status_); }
 
+    /// Latest end-effector pose in cartesian space (X/Y/Z in 0.001 mm; RX/RY/RZ in 0.001 deg).
+    /// Reassembled from three CAN frames; `is_valid` flips true after all three have arrived
+    /// at least once.
     StateSnapshot<ArmMsgEndPose> getArmEndPose() const { return StateSnapshot(arm_end_pose_); }
 
+    /// Latest measured joint angles (joint_1..joint_6, each in 0.001 deg).
+    /// Reassembled from three CAN frames; `is_valid` flips true after all three have arrived.
     StateSnapshot<ArmMsgJointValues> getArmJointStates() const { return StateSnapshot(arm_joint_states_); }
 
+    /// Latest gripper feedback: jaw position (0.001 mm), effort (0.001 N*m), and the per-bit
+    /// status flags (enable, homed, error, etc.) in `value.foc_status`. Updates at ~200 Hz.
     StateSnapshot<ArmMsgFeedbackGripper> getGripperStates() const { return StateSnapshot(arm_gripper_msgs_); }
 
+    /// Per-joint high-speed feedback: motor speed, current, position, and computed effort for
+    /// each of the six joints. Updates at ~200 Hz per joint.
     StateSnapshot<ArmMsgFeedbackHighSpdArray> getArmHighSpeedFeedbacks() const
     {
         return StateSnapshot(arm_high_spd_fb_);
     }
 
+    /// Per-joint low-speed feedback: bus voltage, FOC and motor temperatures, driver-status
+    /// bits (enable, error, overcurrent, ...), and bus current. Updates at ~40 Hz per joint.
+    /// `value.low_spd_feedbacks[i].foc_status.driver_enable_status` is what `isEnabled()` checks.
     StateSnapshot<ArmMsgFeedbackLowSpdArray> getArmLowSpeedFeedbacks() const { return StateSnapshot(arm_low_spd_fb_); }
 
+    /// End-effector velocity/acceleration limits the arm currently has set (0.001 m/s,
+    /// 0.001 rad/s, etc.). Response message; populated only after a periodic-feedback request
+    /// is enabled or after `sendArmParamEnquiryAndConfig(EndVelAcc)` is called.
     StateSnapshot<ArmMsgCurrentEndVelAccParam> getArmCurrentEndVelAcc() const
     {
         return StateSnapshot(arm_current_end_vel_acc_);
     }
 
+    /// Per-joint collision-protection levels currently configured on the arm (0-8 per joint).
+    /// Response message; populated after `sendArmParamEnquiryAndConfig(CrashProtectionLevel)`.
     StateSnapshot<ArmMsgCrashProtectionRatingConfig> getArmCrashProtectionRating() const
     {
         return StateSnapshot(arm_crash_protection_rating_fb_);
     }
 
+    /// Teaching-pendant gripper parameters currently configured on the arm. Response message;
+    /// populated after a corresponding param-enquiry. Firmware V1.5-2+.
     StateSnapshot<ArmMsgGripperTeachingPendantParam> getGripperTeachingPendantParamFeedback() const
     {
         return StateSnapshot(arm_gripper_teaching_pendant_fb_);
     }
 
+    /// Most-recent per-motor angle limit + max speed feedback. Reflects whichever motor was
+    /// queried last; for the per-motor view, see `getArmAllMotorAngleLimitMaxSpd()`.
     StateSnapshot<ArmMsgCurrentMotorAngleLimitMaxSpd> getArmCurrentMotorAngleLimitMaxSpd() const
     {
         return StateSnapshot(arm_current_motor_angle_limit_max_spd_);
     }
 
+    /// Most-recent per-motor max-acceleration feedback. Reflects whichever motor was queried
+    /// last; for the per-motor view, see `getArmAllMotorMaxAccLimit()`.
     StateSnapshot<ArmMsgFeedbackCurrentMotorMaxAccLimit> getArmCurrentMotorMaxAccLimit() const
     {
         return StateSnapshot(arm_current_motor_max_acc_limit_);
     }
 
+    /// Per-motor angle/speed limits for all six motors. The arm fills this in after the search
+    /// queries that `connectPort()` fires automatically; ready within a second of opening.
     StateSnapshot<ArmMsgAllCurrentMotorAngleLimitMaxSpd> getArmAllMotorAngleLimitMaxSpd() const
     {
         return StateSnapshot(arm_all_motor_angle_limit_max_spd_);
     }
 
+    /// Per-motor max-acceleration limits for all six motors. Same lifecycle as above.
     StateSnapshot<ArmMsgFeedbackAllCurrentMotorMaxAccLimit> getArmAllMotorMaxAccLimit() const
     {
         return StateSnapshot(arm_all_motor_max_acc_limit_);
     }
 
+    /// Echo of the joint targets last commanded on this CAN bus, as reported back by the arm
+    /// (or another node). Useful for confirming what the arm last saw, or for reading commands
+    /// from a teleop leader arm in a master/slave setup.
     StateSnapshot<ArmMsgJointValues> getArmJointCtrlMsgs() const { return StateSnapshot(arm_joint_ctrl_msgs_); }
 
+    /// Echo of the gripper command last seen on the bus -- target jaw position, effort, status
+    /// code, set-zero flag. Mirror of `getArmJointCtrlMsgs` for the gripper.
     StateSnapshot<ArmMsgGripperCtrl> getArmGripperCtrlMsgs() const { return StateSnapshot(arm_gripper_ctrl_); }
 
+    /// Echo of the motion-mode (0x151 / "MotionCtrl_2") command last seen on the bus. This is
+    /// the arm's *received* state and may not match what this interface last commanded -- for
+    /// the latter, see `getCommandedMotionCtrlState()`.
     StateSnapshot<ArmMsgMotionCtrl_2> getArmMotionCtrlCode151() const
     {
         return StateSnapshot(arm_motion_ctrl_code_151_);
     }
 
+    /// Latest instruction-response acknowledgment from the arm (CAN ID `0x476`). Returned after
+    /// set-zero / clear-error / similar one-shot commands; carries the index of the responded
+    /// instruction and a success flag.
     StateSnapshot<ArmMsgInstructionResponseConfig> getInstructionResponse() const
     {
         return StateSnapshot(arm_instruction_response_);
@@ -128,14 +217,32 @@ public:
     /// not needed because `connectPort` already fires this once.
     bool requestFirmwareVersion();
 
+    /// Compute forward kinematics from the latest measured joint angles. Returns the cumulative
+    /// pose (position + orientation in the base frame) at each link, as a vector of 6-element
+    /// arrays. The last entry is the end-effector pose.
+    ///
+    /// @note This is computed on demand from `getArmJointStates()`; if the joint feedback isn't
+    /// valid yet, returns the FK of zero joints and prints a warning to stderr.
     std::vector<std::array<double, 6>> getCalculatedFeedbackFK() const;
 
+    /// Same as `getCalculatedFeedbackFK()` but uses the *commanded* joint targets seen on the
+    /// bus (`getArmJointCtrlMsgs()`) instead of the measured angles -- useful for visualising
+    /// where the arm is being asked to go vs. where it actually is.
     std::vector<std::array<double, 6>> getCalculatedControlFK() const;
 
+    /// Aggregate health snapshot bundling the latest arm-status feedback and the message-type
+    /// of the most recent CAN frame parsed. Updates whenever any feedback frame is decoded.
     StateSnapshot<PiperHealth> getArmHealth() const { return StateSnapshot(arm_health_); }
 
+    /// True if the arm-health snapshot is both valid (at least one feedback frame received)
+    /// and healthy (most recent frame within ~1 second). Use as a quick "is the arm
+    /// communicating right now?" check.
     bool isHealthy() const { return arm_health_.isValid() && arm_health_.isHealthy(); }
 
+    /// True if every joint motor reports `driver_enable_status=true` in its latest low-speed
+    /// feedback. Use after `enableRobot()` to confirm the joints have actually come up.
+    /// Returns false until at least one low-speed feedback frame has arrived from each joint.
+    /// @note Does not include the gripper -- check `getGripperStates().value.foc_status.driver_enable_status` for that.
     bool isEnabled() const
     {
         auto lowspd_fb = getArmLowSpeedFeedbacks();
@@ -150,6 +257,9 @@ public:
         return false;
     }
 
+    /// Access the global SDK-side parameter manager (singleton). Use this to read or override
+    /// the SDK's notion of joint/gripper limits (the same values used when `sdk_joint_limit` or
+    /// `sdk_gripper_limit` is enabled in the constructor).
     PiperParamManager &getParameterManager() const { return PiperParamManager::instance(); }
 
     /// Enable the arm: powers on all six joint motors plus the gripper motor and switches them
@@ -412,7 +522,8 @@ public:
     /// @param motor              Which joint motor (1-6 or AllJoints).
     /// @param set_zero           Latch the current position as the joint's zero reference.
     /// @param acc_effective      If `Apply`, `max_joint_acc` is committed; otherwise the field is ignored.
-    /// @param max_joint_acc      Max joint acceleration in 0.01 rad/s^2 (range 0-500). Use 0x7FFF to leave unchanged (firmware V1.5-2+).
+    /// @param max_joint_acc      Max joint acceleration in 0.01 rad/s^2 (range 0-500). Use 0x7FFF to leave unchanged
+    /// (firmware V1.5-2+).
     /// @param clear_error        Clear any latched joint error code.
     bool sendJointConfig(
         MotorIndex motor, ConfigEffective set_zero, ConfigEffective acc_effective, uint16_t max_joint_acc,
@@ -452,8 +563,8 @@ public:
     /// @param max_linear_acc_001m_per_s2  Max linear acceleration in 0.001 m/s^2.
     /// @param max_angular_acc_001rad_per_s2  Max angular acceleration in 0.001 rad/s^2.
     bool setEndVelAccLimits(
-        int16_t max_linear_vel_001m_per_s, int16_t max_angular_vel_001rad_per_s,
-        int16_t max_linear_acc_001m_per_s2, int16_t max_angular_acc_001rad_per_s2
+        int16_t max_linear_vel_001m_per_s, int16_t max_angular_vel_001rad_per_s, int16_t max_linear_acc_001m_per_s2,
+        int16_t max_angular_acc_001rad_per_s2
     );
 
     // ---- Crash protection (CAN ID 0x47A) ----------------------------------------------------

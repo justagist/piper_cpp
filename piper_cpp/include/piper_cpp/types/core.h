@@ -9,12 +9,14 @@
 namespace piper_cpp
 {
 
-// Message type enum (corresponding to ArmMsgType)
+/// Logical message-type tag carried in `PiperMessage::type`. Each value names a specific CAN
+/// frame in the Piper protocol; the parser fills it in on decode and the encoder reads it on
+/// transmit. See `msgTypeToCanId` / `canIdToMsgType` for the wire-id mapping.
 enum class ArmMsgType : uint16_t
 {
     Unknown = 0x00,
 
-    // Feedback
+    // ---- Feedback (received from the arm) ----
     StatusFeedback,
     EndPoseFeedback1,
     EndPoseFeedback2,
@@ -36,7 +38,7 @@ enum class ArmMsgType : uint16_t
     LowSpdFeed5,
     LowSpdFeed6,
 
-    // Transmit
+    // ---- Transmit (sent to the arm) ----
     MotionCtrl1,
     MotionCtrl2,
     MotionCtrlCartesian1,
@@ -83,7 +85,8 @@ enum class ArmMsgType : uint16_t
     FirmwareRead
 };
 
-// CAN ID enum (corresponding to CanIDPiper)
+/// Wire-level CAN identifiers used by the Piper protocol. Each value is the actual numeric ID
+/// that appears on the bus; the corresponding logical type is in `ArmMsgType`.
 enum class CanIDPiper : uint16_t
 {
     ARM_STATUS_FEEDBACK = 0x2A1,
@@ -156,11 +159,17 @@ enum class CanIDPiper : uint16_t
     ARM_FIRMWARE_READ = 0x4AF
 };
 
-// Mapping functions
+/// Map a wire CAN ID to the corresponding `ArmMsgType`. Throws if the ID is unknown.
 ArmMsgType canIdToMsgType(CanIDPiper can_id);
+
+/// Map an `ArmMsgType` back to the wire CAN ID it should be encoded onto. Throws if the type
+/// has no corresponding wire ID (e.g. `Unknown`).
 CanIDPiper msgTypeToCanId(ArmMsgType type);
 
+/// Pretty-print a CAN ID as its symbolic name, e.g. `"ARM_STATUS_FEEDBACK"`.
 std::string toString(CanIDPiper id);
+
+/// Pretty-print an `ArmMsgType` as its symbolic name, e.g. `"StatusFeedback"`.
 std::string toString(ArmMsgType type);
 
 } // namespace piper_cpp

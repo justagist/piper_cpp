@@ -209,11 +209,11 @@ enum class ConfigEffective : uint8_t
 
 } // namespace piper_cpp
 
-// 1. Circular Pattern Coordinate Number Update Control
+/// MoveC (circular pattern) coordinate-point update payload. Wraps the start/mid/end
+/// instruction sent after each `controlEndPose()` while in MoveC mode.
 struct ArmMsgCircularPatternCoordNumUpdateCtrl
 {
-    // Byte 0: instruction_num [0x00, 0x01, 0x02, 0x03]
-    uint8_t instruction_num = 0;
+    uint8_t instruction_num = 0; ///< Sequence number; see `MoveCInstructionPoint`.
 
     std::string toString() const
     {
@@ -225,17 +225,13 @@ struct ArmMsgCircularPatternCoordNumUpdateCtrl
     }
 };
 
-// 2. Gripper Control
+/// Gripper command payload (CAN ID 0x159). Sent on every cycle of the gripper control loop.
 struct ArmMsgGripperCtrl
 {
-    // Bytes 0-3: int32_t grippers_angle (unit: 0.001°)
-    int32_t grippers_angle = 0;
-    // Bytes 4-5: uint16_t grippers_effort (unit: 0.001N·m, 0-5000)
-    uint16_t grippers_effort = 0;
-    // Byte 6: status_code [0x00, 0x01, 0x02, 0x03]
-    uint8_t status_code = 0;
-    // Byte 7: set_zero [0x00, 0xAE]
-    uint8_t set_zero = 0;
+    int32_t grippers_angle = 0;  ///< Target jaw stroke, 0.001 mm.
+    uint16_t grippers_effort = 0; ///< Max gripper torque, 0.001 N*m. Range 0-5000.
+    uint8_t status_code = 0;      ///< Enable/disable + error-clear command; see `GripperStatusCode`.
+    uint8_t set_zero = 0;         ///< One-shot set-zero flag; see `GripperSetZero`.
 
     std::string toString() const
     {
@@ -250,22 +246,18 @@ struct ArmMsgGripperCtrl
     }
 };
 
-// 3. Joint Config
+/// Joint configuration payload (CAN ID 0x475). Combines per-joint zero-setting, max-acceleration
+/// configuration, and error-clearing into one frame. Use `ConfigEffective::Apply` (`0xAE`) on the
+/// "effective" / "set" flags to mark the corresponding action as active for this frame.
 struct ArmMsgJointConfig
 {
-    // Byte 0: joint_motor_num [1~7] (1~6 joint, 7 all)
-    uint8_t joint_motor_num = 7;
-    // Byte 1: set_motor_current_pos_as_zero [0x00, 0xAE]
-    uint8_t set_motor_current_pos_as_zero = 0;
-    // Byte 2: acc_param_config_is_effective_or_not [0x00, 0xAE]
-    uint8_t acc_param_config_is_effective_or_not = 0;
-    // Bytes 3-4: max_joint_acc (unit: 0.01rad/s^2, or 0x7FFF for invalid)
-    uint16_t max_joint_acc = 500;
-    // Byte 5: clear_joint_err [0x00, 0xAE]
-    uint8_t clear_joint_err = 0;
-    // Bytes 6-7: reserved
-    uint8_t reserved6 = 0;
-    uint8_t reserved7 = 0;
+    uint8_t joint_motor_num = 7;                       ///< Motor index 1-6, or 7 for all motors.
+    uint8_t set_motor_current_pos_as_zero = 0;         ///< 0xAE to latch the current joint position as zero.
+    uint8_t acc_param_config_is_effective_or_not = 0;  ///< 0xAE to apply the `max_joint_acc` field below.
+    uint16_t max_joint_acc = 500;                      ///< Max joint acceleration, 0.01 rad/s^2. 0x7FFF = leave unchanged.
+    uint8_t clear_joint_err = 0;                       ///< 0xAE to clear any latched error code on this joint.
+    uint8_t reserved6 = 0;                             ///< Wire byte 6 (reserved).
+    uint8_t reserved7 = 0;                             ///< Wire byte 7 (reserved).
 
     std::string toString() const
     {
@@ -281,15 +273,17 @@ struct ArmMsgJointConfig
     }
 };
 
-// 4. MIT Single Joint Control
+/// Per-joint MIT control payload (CAN IDs 0x15A-0x15F). Fields are pre-packed integers in the
+/// protocol's fixed-point representation; use `PiperInterfaceV2::controlJointMit()` to send
+/// natural floats and let the helper handle the float-to-uint mapping.
 struct ArmMsgJointMitCtrl
 {
-    uint16_t pos_ref = 0;
-    uint16_t vel_ref = 0;
-    uint16_t kp = 10; // Use integer, not float. No scaling!
-    uint16_t kd = 0;  // Use integer, not float. No scaling!
-    uint16_t t_ref = 0;
-    uint8_t crc = 0;
+    uint16_t pos_ref = 0; ///< Position reference (16-bit packed; unsigned mapping over [-12.5, 12.5] rad).
+    uint16_t vel_ref = 0; ///< Velocity reference (12-bit packed; mapped over [-45, 45]).
+    uint16_t kp = 10;     ///< Position-error gain (12-bit packed; mapped over [0, 500]).
+    uint16_t kd = 0;      ///< Velocity-error gain (12-bit packed; mapped over [-5, 5]).
+    uint16_t t_ref = 0;   ///< Feed-forward torque (8-bit packed; mapped over [-8, 8]).
+    uint8_t crc = 0;      ///< Optional CRC byte (firmware-dependent; 0 if unused).
 
     std::string toString() const
     {
@@ -306,11 +300,12 @@ struct ArmMsgJointMitCtrl
     }
 };
 
-// 5. All Joint MIT Control (per-joint array)
+/// Aggregate of MIT command frames for all six joints. Each frame is sent independently on
+/// the bus; this struct just bundles them so callers can compose multi-joint MIT commands.
 struct ArmMsgAllJointMitCtrl
 {
     static constexpr size_t num_joints = 6;
-    std::array<ArmMsgJointMitCtrl, num_joints> motors;
+    std::array<ArmMsgJointMitCtrl, num_joints> motors; ///< One MIT command per joint, indexed 0..5.
 
     std::string toString() const
     {
@@ -321,13 +316,13 @@ struct ArmMsgAllJointMitCtrl
     }
 };
 
-// 6. Master/Slave Mode Config
+/// Leader/follower (master/slave) mode configuration payload (CAN ID 0x470).
 struct ArmMsgMasterSlaveModeConfig
 {
-    uint8_t linkage_config = 0;
-    uint8_t feedback_offset = 0;
-    uint8_t ctrl_offset = 0;
-    uint8_t linkage_offset = 0;
+    uint8_t linkage_config = 0;  ///< Role for this arm; see `LinkageConfig`.
+    uint8_t feedback_offset = 0; ///< Feedback CAN-ID offset; see `CanIdOffset`. Use 0 for single-arm.
+    uint8_t ctrl_offset = 0;     ///< Control CAN-ID offset; see `CanIdOffset`. Use 0 for single-arm.
+    uint8_t linkage_offset = 0;  ///< Linkage-mode target CAN-ID offset. Use 0 for single-arm.
 
     std::string toString() const
     {
@@ -342,15 +337,16 @@ struct ArmMsgMasterSlaveModeConfig
     }
 };
 
-// 7. Motion Ctrl 1
+/// Motion control 1 payload (CAN ID 0x150). Bundles emergency-stop, trajectory control, and
+/// drag-teach control fields. Most users hit this through `emergencyStop()` / `resetPiper()`.
 struct ArmMsgMotionCtrl_1
 {
-    uint8_t emergency_stop = 0;
-    uint8_t track_ctrl = 0;
-    uint8_t grag_teach_ctrl = 0;
-    uint8_t trajectory_index = 0;
-    uint16_t name_index = 0; // Byte4:NameIndex_H, Byte5:NameIndex_L
-    uint16_t crc16 = 0;      // Byte6:crc16_H, Byte7:crc16_L
+    uint8_t emergency_stop = 0;   ///< Emergency stop / resume; see `EmergencyStop`.
+    uint8_t track_ctrl = 0;       ///< Trajectory control sub-command; see `TrackCtrl`.
+    uint8_t grag_teach_ctrl = 0;  ///< Drag-teach sub-command; see `DragTeachCtrl`. (Field name carries Piper's original typo of "drag".)
+    uint8_t trajectory_index = 0; ///< Trajectory index for transmit/replay sub-commands.
+    uint16_t name_index = 0;      ///< Trajectory name index (high byte first on the wire).
+    uint16_t crc16 = 0;           ///< Optional CRC over the frame; firmware-dependent (high byte first).
 
     std::string toString() const
     {
@@ -367,15 +363,17 @@ struct ArmMsgMotionCtrl_1
     }
 };
 
-// 8. Motion Ctrl 2
+/// Motion control 2 payload (CAN ID 0x151). Bundles the arm's motion-mode configuration:
+/// control source, movement type, speed cap, MIT toggle, residence time, and mounting
+/// orientation. Most users hit this through the granular setters or `sendMotionCtrl2()`.
 struct ArmMsgMotionCtrl_2
 {
-    uint8_t ctrl_mode = 0x01;
-    uint8_t move_mode = 0x01;
-    uint8_t move_spd_rate_ctrl = 50;
-    uint8_t mit_mode = 0x00;
-    uint8_t residence_time = 0;
-    uint8_t installation_pos = 0x00;
+    uint8_t ctrl_mode = 0x01;        ///< Top-level control source; see `CtrlMode`. Default `CanCmd`.
+    uint8_t move_mode = 0x01;        ///< Interpolation type; see `MoveMode`. Default `MoveJ`.
+    uint8_t move_spd_rate_ctrl = 50; ///< Speed cap percentage in [0, 100]. Default 50.
+    uint8_t mit_mode = 0x00;         ///< MIT mode toggle; see `MitMode`. Default `PositionVelocity`.
+    uint8_t residence_time = 0;      ///< Hold time at offline-trajectory waypoints (s). 0-254; 255 terminates.
+    uint8_t installation_pos = 0x00; ///< Physical mounting orientation; see `InstallationPos`. 0 = leave unchanged.
 
     std::string toString() const
     {
@@ -392,11 +390,12 @@ struct ArmMsgMotionCtrl_2
     }
 };
 
-// 9. Motor Enable/Disable Config
+/// Motor enable/disable command payload (CAN ID 0x471). Hit through `enableRobot()` /
+/// `disableRobot()` (broadcast) or `enableMotor()` / `disableMotor()` (per-motor).
 struct ArmMsgMotorEnableDisableConfig
 {
-    uint8_t motor_num = 0xFF;
-    uint8_t enable_flag = 0x01;
+    uint8_t motor_num = 0xFF;   ///< Motor index 1-6 (one joint), 7 (all joints), or 0xFF (broadcast).
+    uint8_t enable_flag = 0x01; ///< 0x01 = disable, 0x02 = enable.
 
     std::string toString() const
     {
@@ -409,14 +408,15 @@ struct ArmMsgMotorEnableDisableConfig
     }
 };
 
-// 10. Param Enquiry And Config
+/// Parameter-query / -config payload (CAN ID 0x477). Multi-purpose: each field independently
+/// triggers a different firmware behaviour. See the corresponding enums.
 struct ArmMsgParamEnquiryAndConfig
 {
-    uint8_t param_enquiry = 0x00;
-    uint8_t param_setting = 0x00;
-    uint8_t data_feedback_0x48x = 0x00;
-    uint8_t end_load_param_setting_effective = 0x00;
-    uint8_t set_end_load = 0x03;
+    uint8_t param_enquiry = 0x00;                    ///< Query sub-command; see `ParamEnquiry`.
+    uint8_t param_setting = 0x00;                    ///< Setting sub-command; see `ParamSetting`.
+    uint8_t data_feedback_0x48x = 0x00;              ///< Periodic-feedback toggle; see `PeriodicFeedback48x`.
+    uint8_t end_load_param_setting_effective = 0x00; ///< 0xAE to apply `set_end_load` below.
+    uint8_t set_end_load = 0x03;                     ///< End-load setting; see `EndLoad`. Default Invalid (no change).
 
     std::string toString() const
     {
@@ -432,13 +432,12 @@ struct ArmMsgParamEnquiryAndConfig
     }
 };
 
-// 11. Search Motor Max Angle/Spd/Acc Limit
+/// "Search motor limits" query payload, fired from `piperInit()` once per joint to populate
+/// the per-motor angle/speed/acceleration caches. CAN ID 0x472.
 struct ArmMsgSearchMotorMaxAngleSpdAccLimit
 {
-    uint8_t motor_num = 1;
-    // 0x01: Query motor angle/max speed.
-    // 0x02: Query motor max acceleration limit.
-    uint8_t search_content = 0x01;
+    uint8_t motor_num = 1;         ///< Motor index 1-6.
+    uint8_t search_content = 0x01; ///< 0x01 = query angle / max speed; 0x02 = query max acceleration.
 
     std::string toString() const
     {
@@ -451,11 +450,13 @@ struct ArmMsgSearchMotorMaxAngleSpdAccLimit
     }
 };
 
-// 12. Instruction Response Config
+/// Instruction-response acknowledgment from the arm (CAN ID 0x476). Returned after set-zero,
+/// clear-error, and similar one-shot commands; carries the index of the responded instruction
+/// and a success flag.
 struct ArmMsgInstructionResponseConfig
 {
-    uint8_t instruction_index = 0;
-    uint8_t zero_config_success_flag = 0;
+    uint8_t instruction_index = 0;        ///< Low byte of the instruction this is responding to (e.g. 0x71 for a 0x471 reply).
+    uint8_t zero_config_success_flag = 0; ///< 0x01 if the zero/config operation succeeded; 0x00 otherwise.
 
     std::string toString() const
     {

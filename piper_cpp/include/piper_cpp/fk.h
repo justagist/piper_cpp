@@ -9,17 +9,18 @@
 namespace piper_cpp
 {
 
+/// Forward-kinematics calculator for the Piper arm. Uses the manufacturer's published DH
+/// parameters; constructed once and called many times. Two parameter variants are supported
+/// (with/without the firmware DH offset) selected by the `dh_is_offset` constructor argument.
 class PiperForwardKinematics
 {
 public:
-    // Constants
-
-    using Mat4 = std::array<double, 16>;
-    using JointVec = std::array<double, 6>;
+    using Mat4 = std::array<double, 16>; ///< Row-major 4x4 homogeneous transform.
+    using JointVec = std::array<double, 6>; ///< Six joint angles in radians.
     static constexpr double PI = 3.14159265358979323846;
-    static constexpr double RADIAN = 180.0 / PI;
+    static constexpr double RADIAN = 180.0 / PI; ///< Radians-per-degree (note: poorly named).
 
-    // Members
+    /// DH parameters for the configured arm variant.
     JointVec _a, _alpha, _theta, _d, init_pos;
 
     PiperForwardKinematics(uint8_t dh_is_offset = 0x01)
@@ -42,7 +43,9 @@ public:
         }
     }
 
-    // Main FK function: returns a vector of arrays [x, y, z, roll, pitch, yaw] for each link
+    /// Compute forward kinematics for the supplied joint angles (radians). Returns the
+    /// cumulative pose of each link as `[x, y, z, roll, pitch, yaw]` (mm + radians) in the
+    /// base frame. The last entry is the end-effector pose.
     std::vector<std::array<double, 6>> calcFK(const JointVec& cur_j) const
     {
         std::array<Mat4, 6> Ts;
@@ -66,7 +69,7 @@ public:
     }
 
 private:
-    // Single link transformation matrix (DH)
+    /// Build a single-link DH transformation matrix from `(alpha, a, theta, d)`.
     static Mat4 linkTransformation(double alpha, double a, double theta, double d)
     {
         double ca = std::cos(alpha), sa = std::sin(alpha);
