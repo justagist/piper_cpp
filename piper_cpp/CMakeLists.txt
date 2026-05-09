@@ -45,6 +45,7 @@ add_piper_executable(piper_go_zero piper_go_zero.cpp)
 add_piper_executable(piper_set_zero piper_set_zero.cpp)
 add_piper_executable(piper_set_role piper_set_role.cpp)
 add_piper_executable(piper_read_firmware piper_read_firmware.cpp)
+add_piper_executable(piper_reset piper_reset.cpp)
 
 include(GNUInstallDirs)
 install(TARGETS piper_cpp
@@ -63,6 +64,7 @@ install(TARGETS piper_cpp_can_utils_demo
         piper_set_zero
         piper_set_role
         piper_read_firmware
+        piper_reset
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

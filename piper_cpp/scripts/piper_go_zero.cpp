@@ -63,7 +63,9 @@ int main(int argc, char* argv[])
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
-    piper.sendMotionCtrl2(CtrlMode::CanCmd, MoveMode::MoveJ, static_cast<uint8_t>(speed_pct), MitMode::PositionVelocity);
+    piper.sendMotionCtrl2(
+        CtrlMode::CanCmd, MoveMode::MoveJ, static_cast<uint8_t>(speed_pct), MitMode::PositionVelocity
+    );
     std::cout << "Driving all joints + gripper to zero at " << speed_pct << "%.\n";
 
     const auto t_start = std::chrono::steady_clock::now();
@@ -85,9 +87,9 @@ int main(int argc, char* argv[])
         auto js = piper.getArmJointStates();
         if (js.is_valid)
         {
-            std::cout << "actual=[" << js.value.joint_1 << ", " << js.value.joint_2 << ", " << js.value.joint_3
-                      << ", " << js.value.joint_4 << ", " << js.value.joint_5 << ", " << js.value.joint_6
-                      << "] md\r" << std::flush;
+            std::cout << "actual=[" << js.value.joint_1 << ", " << js.value.joint_2 << ", " << js.value.joint_3 << ", "
+                      << js.value.joint_4 << ", " << js.value.joint_5 << ", " << js.value.joint_6 << "] mdeg\r"
+                      << std::flush;
         }
         std::this_thread::sleep_for(loop_dt);
     }
