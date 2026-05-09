@@ -1,10 +1,18 @@
 #include "piper_cpp/interface/piper_interface_v2.h"
+#include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <string>
 #include <thread>
+
+// SIGINT/SIGTERM-safe stop flag. The gripper firmware may lock itself into a fault state if its
+// command stream is cut while it's actively driving, requiring a power-cycle to recover, so we want to shut down
+// cleanly on Ctrl+C by sending an explicit disable command before exiting.
+static std::atomic<bool> g_stop_requested{false};
+static void on_signal(int) { g_stop_requested.store(true); }
 
 // Mirror of the official Python `piper_ctrl_gripper.py` demo.
 //
@@ -47,6 +55,9 @@ int main(int argc, char *argv[])
         }
     }
 
+    std::signal(SIGINT, on_signal);
+    std::signal(SIGTERM, on_signal);
+
     using namespace piper_cpp;
     PiperInterfaceV2 piper("can0");
 
@@ -67,14 +78,21 @@ int main(int argc, char *argv[])
 
     if (do_zero)
     {
-        std::cout << "Set-zero one-shot. Make sure jaws are closed (or at the desired zero reference)...\n";
-        // Wash any latched error state first, then latch the current jaw position as zero.
-        piper.controlGripper(0, 0, GripperStatusCode::DisableAndClearError);
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        std::cout << "Set-zero. Make sure jaws are closed (or at the desired zero reference)...\n";
+        // Mirror the official `piper_set_gripper_zero.py` timing exactly: send a plain Disable,
+        // wait 1.5 s for the gripper to settle, then send the SetZero one-shot.
+        piper.controlGripper(0, 1000, GripperStatusCode::Disable);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
         piper.setGripperZero();
-        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
         std::cout << "Zero set.\n";
     }
+
+    // Put the arm into CAN-command mode with joint-space movement. Without this, the firmware
+    // silently ignores joint and gripper position commands even when motors are enabled.
+    // The setting persists until power-cycle.
+    piper.sendMotionCtrl2(CtrlMode::CanCmd, MoveMode::MoveJ, /*speed%=*/30, MitMode::PositionVelocity);
+    std::cout << "Motion mode configured: CanCmd / MoveJ / 30%.\n";
 
     const int32_t max_micrometers = max_mm * 1000; // 0.001 mm units
     const auto t_start = std::chrono::steady_clock::now();
@@ -84,11 +102,15 @@ int main(int argc, char *argv[])
     std::cout << "Sweeping 0 -> " << max_mm << " mm with period " << period_ms << " ms (each direction).\n";
     while (true)
     {
+        if (g_stop_requested.load())
+        {
+            std::cout << "\nStop requested, shutting down gripper cleanly...\n";
+            break;
+        }
         auto now = std::chrono::steady_clock::now();
         if (duration_s > 0 && now - t_start >= std::chrono::seconds(duration_s))
             break;
 
-        // square-wave between 0 and max for now; replace with a triangle/sine if you prefer
         auto phase = ((now - t_start) / period) % 2;
         int32_t target = (phase == 0) ? 0 : max_micrometers;
 
@@ -97,7 +119,7 @@ int main(int argc, char *argv[])
         auto fb = piper.getGripperStates();
         if (fb.is_valid)
         {
-            std::cout << "target=" << target << " us" << " | angle=" << fb.value.grippers_angle << " us ("
+            std::cout << "target=" << target << " um" << " | angle=" << fb.value.grippers_angle << " um ("
                       << fb.value.grippers_angle * 0.001 << " mm)" << " | effort=" << fb.value.grippers_effort
                       << " | enabled=" << fb.value.foc_status.driver_enable_status
                       << " | homed=" << fb.value.foc_status.homing_status << "\n";
@@ -106,8 +128,12 @@ int main(int argc, char *argv[])
         std::this_thread::sleep_for(loop_dt);
     }
 
-    // Disable gripper before disconnect so it doesn't continue holding position.
-    piper.controlGripper(0, 0, GripperStatusCode::Disable);
+    for (int i = 0; i < 5; ++i)
+    {
+        piper.controlGripper(0, 0, GripperStatusCode::Disable);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    // piper.disableRobot();
     piper.disconnectPort(std::chrono::milliseconds{200});
     std::cout << "Done.\n";
     return 0;
