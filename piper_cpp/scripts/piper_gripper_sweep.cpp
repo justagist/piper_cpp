@@ -23,7 +23,7 @@ static void on_signal(int) { g_stop_requested.store(true); }
 //      gripper firmware will act on position commands. Skip with --no-zero if already done.
 //      Close the jaws by hand before running unless you have a different reference in mind.
 //   4. Sweep between fully-closed (0 mm) and `--max-mm` (default 50 mm) on a fixed period,
-//      keeping `GripperStatusCode::Enable` on every cycle so the gripper doesn't auto-disable.
+//      sending `controlGripper(target, effort, Enable)` on every loop iteration.
 //
 // Flags:
 //   --no-zero        skip the set-zero step (if the gripper is already homed)

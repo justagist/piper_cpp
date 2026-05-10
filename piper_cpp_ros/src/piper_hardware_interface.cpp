@@ -438,8 +438,6 @@ hardware_interface::return_type PiperHardware::write(const rclcpp::Time&, const 
     );
     if (with_gripper_)
     {
-        // Gripper firmware auto-disables ~1s after the last frame, so we must keep streaming
-        // Enable along with the target angle every cycle.
         const int32_t angle_um = static_cast<int32_t>(std::lround(hw_command_gripper_position_ * kMToUm));
         piper_->controlGripper(angle_um, gripper_effort_milli_nm_, piper_cpp::GripperStatusCode::Enable);
     }

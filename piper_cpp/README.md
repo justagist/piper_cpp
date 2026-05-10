@@ -127,10 +127,10 @@ A few subtleties learned the hard way (and worth knowing before commanding the a
 - **The gripper needs a homing reference.** Send `setGripperZero()` before enabling, and
   give it ~1.5s to settle. After that the gripper accepts position commands. Without
   homing, every `controlGripper` call is silently dropped.
-- **Stream the gripper command continuously.** The gripper firmware (seems to) auto-disable itself
-  ~1s after the command stream stops, and a Ctrl-C in the middle of a drive could latch the
-  firmware into a fault that only clears on power-cycle. Always send a few `Disable` frames
-  before disconnecting (the bundled scripts demonstrate the SIGINT-safe pattern).
+- **Send a clean `Disable` before disconnecting from the gripper.** A Ctrl-C in the middle
+  of a drive can otherwise latch the firmware into a fault that only clears on a power
+  cycle. The bundled scripts demonstrate the SIGINT-safe pattern (a few `Disable` frames at
+  ~50 ms intervals before tearing down the CAN port).
 - **Master/slave (a.k.a. leader/follower) mode change requires a power cycle.** The
   master/slave config (`setAsMasterArm()` / `setAsSlaveArm()` / `setMasterSlaveConfig()`) is
   written to firmware and persists across reboots, but the arm only picks up the change at

@@ -407,10 +407,10 @@ public:
     /// @return true on successful CAN send.
     bool setAsSlaveArm() { return setMasterSlaveConfig(LinkageConfig::MotionOutputArm); }
 
-    /// Command the gripper to a target jaw position with a maximum effort. This is the
-    /// per-cycle command -- call it continuously (>1 Hz) in your control loop with
-    /// `status_code = Enable`, otherwise the gripper firmware will auto-disable about a
-    /// second after your last frame.
+    /// Command the gripper to a target jaw position with a maximum effort. Send `Enable`
+    /// once to bring the position-control loop online; subsequent frames with
+    /// `status_code = Enable` update the target without changing enable state. Send
+    /// `Disable` explicitly to stop the loop.
     ///
     /// @note The gripper firmware ignores `grippers_angle` until the gripper has been zeroed
     /// at least once per power-up. Call `setGripperZero()` first if your gripper isn't homed

@@ -72,9 +72,8 @@ enum class CanIdOffset : uint8_t
 };
 
 /// Gripper enable/disable + error-clear command. Sent on every gripper-control frame.
-/// @note The gripper firmware auto-disables roughly 1 second after the last `Enable` is
-/// received, so this byte must be repeated continuously (>1 Hz) in your control loop to keep
-/// the gripper active. A one-shot enable is not enough.
+/// Send `Enable` once to bring the position-control loop online, then issue position
+/// commands as needed; an explicit `Disable` will stop the loop again.
 enum class GripperStatusCode : uint8_t
 {
     Disable = 0x00, ///< Disable the gripper -- its position-control loop stops and commanded angles have no effect.

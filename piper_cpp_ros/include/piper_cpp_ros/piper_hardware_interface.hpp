@@ -49,8 +49,9 @@ namespace piper_cpp_ros
 /// Gripper (if `with_gripper:=true`) appears as a 7th prismatic joint. State interfaces:
 ///                        position (m, jaw stroke) and effort (N*m). Command interface:
 ///                        position (m). The gripper's max effort is fixed at
-///                        `gripper_max_effort` (N*m, hardware param) and re-sent every
-///                        cycle along with `Enable`.
+///                        `gripper_max_effort` (N*m, hardware param) and a
+///                        `controlGripper(..., Enable)` frame is sent on every write()
+///                        cycle alongside the commanded position.
 ///
 /// Joint ordering: the URDF's `<ros2_control>` block must declare exactly six arm joints
 /// (mapped to motors 1..6 in declaration order, regardless of joint name) followed by one
