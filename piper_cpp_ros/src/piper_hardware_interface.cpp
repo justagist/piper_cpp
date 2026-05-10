@@ -279,7 +279,26 @@ hardware_interface::CallbackReturn PiperHardware::on_activate(const rclcpp_lifec
 
     if (with_gripper_)
     {
-        // Optionally latch the current jaw position as zero. This re-calibrates the gripper
+        auto gs = piper_->getGripperStates();
+        auto g_t0 = steady_clock::now();
+        while (!gs.is_valid)
+        {
+            if (steady_clock::now() - g_t0 > 2s)
+            {
+                RCLCPP_ERROR(
+                    rclcpp::get_logger(kLogger),
+                    "with_gripper:=true but no gripper feedback received within 2 s. "
+                    "Verify the gripper is physically connected, powered on, and on the same CAN "
+                    "bus as the arm. To run the arm without a gripper, relaunch with "
+                    "with_gripper:=false."
+                );
+                return hardware_interface::CallbackReturn::ERROR;
+            }
+            std::this_thread::sleep_for(20ms);
+            gs = piper_->getGripperStates();
+        }
+
+        // Optionally set the current gripper position as zero. This re-calibrates the gripper
         // at whatever pose the jaws happen to be in right now -- only enable if you always
         // activate from a known reference (typically fully closed).
         if (home_gripper_on_activate_)
@@ -290,20 +309,9 @@ hardware_interface::CallbackReturn PiperHardware::on_activate(const rclcpp_lifec
             );
             piper_->setGripperZero();
             std::this_thread::sleep_for(50ms);
+            gs = piper_->getGripperStates(); // refresh post-zero
         }
 
-        auto gs = piper_->getGripperStates();
-        auto g_t0 = steady_clock::now();
-        while (!gs.is_valid)
-        {
-            if (steady_clock::now() - g_t0 > 2s)
-            {
-                RCLCPP_ERROR(rclcpp::get_logger(kLogger), "Timed out waiting for gripper feedback.");
-                return hardware_interface::CallbackReturn::ERROR;
-            }
-            std::this_thread::sleep_for(20ms);
-            gs = piper_->getGripperStates();
-        }
         hw_state_gripper_position_ = static_cast<double>(gs.value.grippers_angle) * kUmToM;
         hw_state_gripper_effort_ = static_cast<double>(gs.value.grippers_effort) * kMilliToUnit;
         hw_command_gripper_position_ = hw_state_gripper_position_;
