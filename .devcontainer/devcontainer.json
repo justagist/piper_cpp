@@ -2,26 +2,34 @@
     "name": "piper_cpp_dev",
     "build": {
         "dockerfile": "../Dockerfile",
-        "context": ".."
+        "context": "..",
+        "args": {
+            "USERNAME": "${localEnv:USER}"
+        }
     },
-    "workspaceFolder": "/ws",
+    "workspaceFolder": "/home/${localEnv:USER}/ws",
     "mounts": [
-        "type=bind,source=${localWorkspaceFolder},target=/ws/src/piper_cpp",
-        "type=volume,source=piper_cpp_build,target=/ws/build",
-        "type=volume,source=piper_cpp_install,target=/ws/install"
+        "type=bind,source=${localWorkspaceFolder},target=/home/${localEnv:USER}/ws/src/piper_cpp",
+        "type=volume,source=piper_cpp_build,target=/home/${localEnv:USER}/ws/build",
+        "type=volume,source=piper_cpp_install,target=/home/${localEnv:USER}/ws/install",
+        "type=bind,source=${localEnv:HOME}/.Xauthority,target=/home/${localEnv:USER}/.Xauthority,readonly"
     ],
     "overrideCommand": true,
     "postStartCommand": "bash",
-    // Helpful capabilities & mounts for SocketCAN work
     "runArgs": [
         "--net=host",
         "--cap-add=NET_ADMIN",
         "--privileged",
         "-v",
-        "/lib/modules:/lib/modules:ro"
+        "/lib/modules:/lib/modules:ro",
+        "-v",
+        "/tmp/.X11-unix:/tmp/.X11-unix"
     ],
     "containerEnv": {
-        "ROS_DISTRO": "jazzy"
+        "ROS_DISTRO": "jazzy",
+        "DISPLAY": "${localEnv:DISPLAY}",
+        "XAUTHORITY": "/home/${localEnv:USER}/.Xauthority",
+        "QT_X11_NO_MITSHM": "1"
     },
     "customizations": {
         "vscode": {
@@ -39,5 +47,6 @@
             ]
         }
     },
-    "remoteUser": "root"
+    "remoteUser": "${localEnv:USER}",
+    "updateRemoteUserUID": true
 }
