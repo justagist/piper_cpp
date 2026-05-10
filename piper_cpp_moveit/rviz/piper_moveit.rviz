@@ -1,0 +1,61 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 0
+    Name: Displays
+  - Class: rviz_common/Tool Properties
+    Name: Tool Properties
+  - Class: rviz_common/Views
+    Name: Views
+  - Class: rviz_common/Time
+    Name: Time
+  - Class: moveit_rviz_plugin/MotionPlanning
+    Name: MotionPlanning
+
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Plane Cell Count: 10
+      Reference Frame: <Fixed Frame>
+    - Class: rviz_default_plugins/RobotModel
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+      Name: RobotModel
+    - Class: moveit_rviz_plugin/MotionPlanning
+      Move Group Namespace: ""
+      Name: MotionPlanning
+      Planning Request:
+        Planning Group: manipulator
+      Robot Description: robot_description
+      Show Robot Visual: true
+      Show Robot Collision: false
+      Trajectory Topic: /display_planned_path
+      Planned Path:
+        Loop Animation: false
+        Show Trail: false
+        State Display Time: 0.05 s
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: world
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 1.5
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0.3
+      Pitch: 0.5
+      Yaw: 0.785
+      Name: Current View
+Window Geometry:
+  Height: 900
+  Width: 1600
+  Hide Left Dock: false
+  Hide Right Dock: false
