@@ -29,7 +29,7 @@ sudo ip link set can0 up type can bitrate 1000000
 ### All-in-one
 
 ```bash
-ros2 launch piper_cpp_moveit piper_moveit.launch.py
+ros2 launch piper_cpp_moveit piper_moveit.launch.py use_real_hardware:=true with_gripper:=true
 ```
 
 This starts the controller manager, robot_state_publisher, joint_state_broadcaster,

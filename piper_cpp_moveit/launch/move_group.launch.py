@@ -18,6 +18,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 
 def _build_actions(context, *args, **kwargs):
+    use_real_hardware = LaunchConfiguration("use_real_hardware").perform(context)
     with_gripper = LaunchConfiguration("with_gripper").perform(context).lower() in (
         "true",
         "1",
@@ -47,7 +48,9 @@ def _build_actions(context, *args, **kwargs):
 
     moveit_config = (
         MoveItConfigsBuilder("piper", package_name="piper_cpp_moveit")
-        .robot_description(file_path=urdf_xacro)
+        .robot_description(
+            file_path=urdf_xacro, mappings={"use_real_hardware": use_real_hardware}
+        )
         .robot_description_semantic(file_path=srdf_xacro)
         .robot_description_kinematics(
             file_path=os.path.join(moveit_share, "config", "kinematics.yaml")
@@ -87,6 +90,12 @@ def _build_actions(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "use_real_hardware",
+                default_value="true",
+                description="Must match how piper_cpp_ros was launched. Only used to keep "
+                "move_group's URDF identical to ros2_control's.",
+            ),
             DeclareLaunchArgument(
                 "with_gripper",
                 default_value="false",

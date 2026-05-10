@@ -31,6 +31,7 @@
   <!-- ros2_control hardware interface block. -->
   <xacro:include filename="$(find piper_cpp_ros)/urdf/piper.ros2_control.xacro"/>
 
+  <xacro:arg name="use_real_hardware" default="true"/>
   <xacro:arg name="can_interface" default="can0"/>
   <xacro:arg name="speed_pct" default="30"/>
   <xacro:arg name="go_to_zero_on_activate" default="true"/>
@@ -38,6 +39,7 @@
   <xacro:arg name="home_gripper_on_activate" default="false"/>
 
   <xacro:piper_ros2_control
+      use_real_hardware="$(arg use_real_hardware)"
       can_interface="$(arg can_interface)"
       speed_pct="$(arg speed_pct)"
       go_to_zero_on_activate="$(arg go_to_zero_on_activate)"

@@ -9,6 +9,9 @@ Spawns:
   - joint_position_controller (loaded but not started; activate from CLI when needed)
   - gripper_controller (only when with_gripper:=true)
 
+Pass `use_real_hardware:=false` to run with mock_components/GenericSystem instead of the
+real CAN-driven PiperHardware.
+
 To run a different URDF, override `description_package`, `description_file`, and
 `controllers_file` directly -- those take precedence over the with_gripper toggle.
 """
@@ -31,6 +34,7 @@ def _build_actions(context, *args, **kwargs):
     description_package = LaunchConfiguration("description_package").perform(context)
     description_file_arg = LaunchConfiguration("description_file").perform(context)
     controllers_file_arg = LaunchConfiguration("controllers_file").perform(context)
+    use_real_hardware = LaunchConfiguration("use_real_hardware").perform(context)
     can_interface = LaunchConfiguration("can_interface").perform(context)
     speed_pct = LaunchConfiguration("speed_pct").perform(context)
     go_to_zero_on_activate = LaunchConfiguration("go_to_zero_on_activate").perform(context)
@@ -58,6 +62,8 @@ def _build_actions(context, *args, **kwargs):
         PathJoinSubstitution(
             [FindPackageShare(description_package), "urdf", description_file_arg]
         ),
+        " ",
+        f"use_real_hardware:={use_real_hardware}",
         " ",
         f"can_interface:={can_interface}",
         " ",
@@ -160,6 +166,12 @@ def generate_launch_description():
             # a specific filename to force a particular URDF.
             DeclareLaunchArgument("description_file", default_value=""),
             DeclareLaunchArgument("controllers_file", default_value=""),
+            DeclareLaunchArgument(
+                "use_real_hardware",
+                default_value="true",
+                description="false runs ros2_control with mock_components/GenericSystem instead of "
+                "the real CAN-driven PiperHardware.",
+            ),
             DeclareLaunchArgument("can_interface", default_value="can0"),
             DeclareLaunchArgument("speed_pct", default_value="30"),
             DeclareLaunchArgument("go_to_zero_on_activate", default_value="true"),

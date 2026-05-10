@@ -11,6 +11,10 @@ ros2_control is already up.
 Pass `with_gripper:=true` to plan and execute on the parallel-jaw gripper as well as the
 arm. This swaps in the gripper-enabled URDF, SRDF, and moveit_controllers, and spawns the
 gripper_controller alongside the arm's joint_trajectory_controller.
+
+Pass `use_real_hardware:=false` to swap PiperHardware for mock_components/GenericSystem.
+The whole MoveIt + RViz stack still comes up; the joints just simulate position-following
+with no CAN connection. Useful for planning-side development without a connected arm.
 """
 
 import os
@@ -26,6 +30,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 
 def _build_actions(context, *args, **kwargs):
+    use_real_hardware = LaunchConfiguration("use_real_hardware").perform(context)
     can_interface = LaunchConfiguration("can_interface").perform(context)
     speed_pct = LaunchConfiguration("speed_pct").perform(context)
     go_to_zero_on_activate = LaunchConfiguration("go_to_zero_on_activate").perform(context)
@@ -50,6 +55,7 @@ def _build_actions(context, *args, **kwargs):
             moveit_share, "config", "moveit_controllers_with_gripper.yaml"
         )
         urdf_mappings = {
+            "use_real_hardware": use_real_hardware,
             "can_interface": can_interface,
             "speed_pct": speed_pct,
             "go_to_zero_on_activate": go_to_zero_on_activate,
@@ -65,6 +71,7 @@ def _build_actions(context, *args, **kwargs):
             moveit_share, "config", "moveit_controllers.yaml"
         )
         urdf_mappings = {
+            "use_real_hardware": use_real_hardware,
             "can_interface": can_interface,
             "speed_pct": speed_pct,
             "go_to_zero_on_activate": go_to_zero_on_activate,
@@ -92,6 +99,7 @@ def _build_actions(context, *args, **kwargs):
             )
         ),
         launch_arguments={
+            "use_real_hardware": use_real_hardware,
             "can_interface": can_interface,
             "speed_pct": speed_pct,
             "go_to_zero_on_activate": go_to_zero_on_activate,
@@ -130,6 +138,13 @@ def _build_actions(context, *args, **kwargs):
 def generate_launch_description():
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "use_real_hardware",
+                default_value="true",
+                description="false runs ros2_control with mock_components/GenericSystem instead "
+                "of the real CAN-driven PiperHardware. Useful for MoveIt/RViz development without "
+                "a connected Piper.",
+            ),
             DeclareLaunchArgument("can_interface", default_value="can0"),
             DeclareLaunchArgument("speed_pct", default_value="30"),
             DeclareLaunchArgument("go_to_zero_on_activate", default_value="true"),
