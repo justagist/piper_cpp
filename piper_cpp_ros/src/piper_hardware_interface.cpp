@@ -19,6 +19,9 @@ namespace
 constexpr double kRadToMd = 1000.0 * 180.0 / M_PI;
 constexpr double kMdToRad = 1.0 / kRadToMd;
 
+// piper_cpp's high-speed feedback reports motor_speed in 0.001 rad/s and effort in 0.001 N*m.
+constexpr double kMilliToUnit = 1.0e-3;
+
 inline int32_t radToMd(double rad) { return static_cast<int32_t>(std::lround(rad * kRadToMd)); }
 inline double mdToRad(int32_t md) { return static_cast<double>(md) * kMdToRad; }
 
@@ -66,6 +69,8 @@ PiperHardware::on_init(const hardware_interface::HardwareComponentInterfaceParam
     }
 
     hw_states_position_.assign(kNumJoints, 0.0);
+    hw_states_velocity_.assign(kNumJoints, 0.0);
+    hw_states_effort_.assign(kNumJoints, 0.0);
     hw_commands_position_.assign(kNumJoints, 0.0);
 
     for (const auto& joint : info_.joints)
@@ -84,6 +89,18 @@ PiperHardware::on_init(const hardware_interface::HardwareComponentInterfaceParam
         {
             if (iface.name == hardware_interface::HW_IF_POSITION)
                 has_pos_state = true;
+            else if (iface.name == hardware_interface::HW_IF_VELOCITY
+                     || iface.name == hardware_interface::HW_IF_EFFORT)
+                continue;
+            else
+            {
+                RCLCPP_ERROR(
+                    rclcpp::get_logger(kLogger),
+                    "Joint '%s' declares unsupported state interface '%s'. Supported: position, velocity, effort.",
+                    joint.name.c_str(), iface.name.c_str()
+                );
+                return hardware_interface::CallbackReturn::ERROR;
+            }
         }
         if (!has_pos_state)
         {
@@ -212,10 +229,18 @@ hardware_interface::CallbackReturn PiperHardware::on_cleanup(const rclcpp_lifecy
 std::vector<hardware_interface::StateInterface> PiperHardware::export_state_interfaces()
 {
     std::vector<hardware_interface::StateInterface> ifaces;
-    ifaces.reserve(kNumJoints);
+    ifaces.reserve(kNumJoints * 3);
     for (std::size_t i = 0; i < kNumJoints; ++i)
     {
-        ifaces.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_POSITION, &hw_states_position_[i]);
+        for (const auto& iface : info_.joints[i].state_interfaces)
+        {
+            if (iface.name == hardware_interface::HW_IF_POSITION)
+                ifaces.emplace_back(info_.joints[i].name, iface.name, &hw_states_position_[i]);
+            else if (iface.name == hardware_interface::HW_IF_VELOCITY)
+                ifaces.emplace_back(info_.joints[i].name, iface.name, &hw_states_velocity_[i]);
+            else if (iface.name == hardware_interface::HW_IF_EFFORT)
+                ifaces.emplace_back(info_.joints[i].name, iface.name, &hw_states_effort_[i]);
+        }
     }
     return ifaces;
 }
@@ -244,6 +269,16 @@ hardware_interface::return_type PiperHardware::read(const rclcpp::Time&, const r
         hw_states_position_[3] = mdToRad(js.value.joint_4);
         hw_states_position_[4] = mdToRad(js.value.joint_5);
         hw_states_position_[5] = mdToRad(js.value.joint_6);
+    }
+    auto hs = piper_->getArmHighSpeedFeedbacks();
+    if (hs.is_valid)
+    {
+        for (std::size_t i = 0; i < kNumJoints; ++i)
+        {
+            const auto& fb = hs.value.high_spd_feedbacks[i];
+            hw_states_velocity_[i] = static_cast<double>(fb.motor_speed) * kMilliToUnit;
+            hw_states_effort_[i] = static_cast<double>(fb.effort) * kMilliToUnit;
+        }
     }
     return hardware_interface::return_type::OK;
 }

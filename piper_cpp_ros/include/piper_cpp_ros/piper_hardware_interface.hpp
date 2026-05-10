@@ -36,7 +36,10 @@ namespace piper_cpp_ros
 ///                    commanded pose -- disabling here would drop the arm.
 ///   - on_cleanup   : disconnect the CAN port.
 ///
-/// State interfaces : position (rad) per joint.
+/// State interfaces : position (rad), velocity (rad/s), effort (N*m) per joint. Velocity
+///                    and effort come from the per-joint high-speed feedback (~200 Hz).
+///                    Effort is derived by piper_cpp from motor current via the
+///                    manufacturer's per-joint coefficient table.
 /// Command interfaces: position (rad) per joint.
 ///
 /// Joint ordering: the URDF's `<ros2_control>` block must declare exactly six joints. The
@@ -71,6 +74,8 @@ private:
     bool go_to_zero_on_activate_ = true;
 
     std::vector<double> hw_states_position_;   ///< rad
+    std::vector<double> hw_states_velocity_;   ///< rad/s
+    std::vector<double> hw_states_effort_;     ///< N*m
     std::vector<double> hw_commands_position_; ///< rad
 
     std::atomic<bool> active_{false};
