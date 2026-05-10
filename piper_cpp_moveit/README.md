@@ -12,7 +12,7 @@ Depends on:
 
 - [`piper_cpp_ros`](../piper_cpp_ros) (and transitively `piper_cpp` and
   `piper_description`).
-- MoveIt 2: `ros-jazzy-moveit` (and friends — see [package.xml](package.xml) for the
+- MoveIt 2: `ros-jazzy-moveit` (and friends -- see [package.xml](package.xml) for the
   full list).
 
 ```bash
@@ -49,4 +49,4 @@ ros2 launch piper_cpp_moveit move_group.launch.py
 
 ## License
 
-MIT — see [../piper_cpp/LICENSE](../piper_cpp/LICENSE).
+MIT -- see [../piper_cpp/LICENSE](../piper_cpp/LICENSE).

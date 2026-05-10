@@ -23,10 +23,6 @@ positions every `write()` cycle. This is the same control strategy demonstrated 
 - A launch file ([launch/piper_control.launch.py](launch/piper_control.launch.py)) that
   brings everything up.
 
-## TODO
-- [ ] Only Position command and state interfaces exposed. Effort and velocity interfaces are not exposed.
-- [ ] The gripper is not handled -- have to drive it from the standalone `piper_cpp` API.
-
 ## State / command interfaces
 
 | Joint    | State (rad) | Command (rad) |
@@ -47,14 +43,14 @@ positions every `write()` cycle. This is the same control strategy demonstrated 
 
 This package depends on:
 
-- [`piper_cpp`](../piper_cpp) — the underlying CAN/SDK library.
+- [`piper_cpp`](../piper_cpp) -- the underlying CAN/SDK library.
 - The standard ros2_control stack (`ros-jazzy-ros2-control`, `ros-jazzy-ros2-controllers`).
-- [`piper_description`](../piper_ros/src/piper_description) — for the default URDF the
-  bundled launch file feeds to xacro. This is the **only** package from the upstream
-  [`piper_ros`](../piper_ros) repo that you need; the rest of `piper_ros` is unrelated and can be ignored
-  if you only want this hardware interface. If you have your own URDF that includes
-  [urdf/piper.ros2_control.xacro](urdf/piper.ros2_control.xacro), you don't need
-  `piper_description` either.
+- [`piper_description`](https://github.com/agilexrobotics/piper_ros/tree/humble/src/piper_description)
+  (use "humble" branch) -- for the default URDF the bundled launch file feeds to xacro. This is the **only**
+  package from the upstream [`piper_ros`](https://github.com/agilexrobotics/piper_ros) repo that you need;
+  the rest of `piper_ros` is unrelated and can be ignored if you only want this hardware interface. If
+  you have your own URDF that includes [urdf/piper.ros2_control.xacro](urdf/piper.ros2_control.xacro),
+  you don't need `piper_description` either, but using the one from `piper_description` is recommended.
 
 Build the workspace with colcon:
 
@@ -152,4 +148,4 @@ motor 6. Joint names must match what your URDF's `<robot>` definition uses.
 
 ## License
 
-MIT — see [../LICENSE](../LICENSE).
+MIT -- see [../LICENSE](../LICENSE).

@@ -139,7 +139,7 @@ A few subtleties learned the hard way (and worth knowing before commanding the a
 - **A `resetPiper()` is sometimes needed to recover from invisible faults.** The arm can end
   up in a state where motion commands look accepted on the bus but the joints/gripper don't move,
   with no obvious error in the feedback. `resetPiper()` (or the `piper_reset` CLI) drops
-  power and clears all internal/error flags — after that, `enableRobot()` and motion-mode
+  power and clears all internal/error flags -- after that, `enableRobot()` and motion-mode
   setup brings it back. It's a softer alternative to a physical power cycle.
 
 ## CLI binaries
@@ -185,7 +185,7 @@ piper_cpp/
 
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+MIT -- see [LICENSE](../LICENSE).
 
 Ported from [`piper_sdk`](https://github.com/agilexrobotics/piper_sdk) (MIT,
 © 2024 Agilex Robotice Co., Ltd.).
