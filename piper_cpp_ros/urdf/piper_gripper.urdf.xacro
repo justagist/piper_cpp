@@ -1,0 +1,114 @@
+<?xml version="1.0"?>
+<!--
+  Parallel-jaw gripper geometry for the Piper arm. Vendored from piper_description's
+  piper_description.urdf so we can bake a `<mimic>` tag into joint8 - piper_description
+  ships joint7 and joint8 as independent prismatic joints, but the physical gripper
+  actuates them symmetrically and the SDK only commands joint7. Without the mimic,
+  robot_state_publisher has no way to compute joint8's TF and MoveIt's planning_scene_-
+  monitor warns "Missing joint8" until a state arrives.
+
+  Mesh references still point at piper_description's mesh package, so this file inherits
+  any mesh updates upstream.
+
+  Usage: xacro:include this AFTER piper_no_gripper_description so `link6` and the world
+  frame already exist. The macro takes no args.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="piper_gripper">
+    <link name="gripper_base">
+      <inertial>
+        <origin xyz="-0.000183807162235591 8.05033155577911E-05 0.0321436689908876" rpy="0 0 0"/>
+        <mass value="0.45"/>
+        <inertia ixx="0.00092934" ixy="0.00000034" ixz="-0.00000738"
+                 iyy="0.00071447" iyz="0.00000005" izz="0.00039442"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://piper_description/meshes/gripper_base.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://piper_description/meshes/gripper_base.STL"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="joint6_to_gripper_base" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="link6"/>
+      <child link="gripper_base"/>
+    </joint>
+
+    <link name="link7">
+      <inertial>
+        <origin xyz="0.00065123185041968 -0.0491929869131989 0.00972258769184025" rpy="0 0 0"/>
+        <mass value="0.025"/>
+        <inertia ixx="0.00007371" ixy="-0.00000113" ixz="0.00000021"
+                 iyy="0.00000781" iyz="-0.00001372" izz="0.0000747"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://piper_description/meshes/link7.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://piper_description/meshes/link7.STL"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="joint7" type="prismatic">
+      <origin xyz="0 0 0.1358" rpy="1.5708 0 0"/>
+      <parent link="gripper_base"/>
+      <child link="link7"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="0" upper="0.035" effort="10" velocity="1"/>
+    </joint>
+
+    <link name="link8">
+      <inertial>
+        <origin xyz="0.000651231850419722 -0.0491929869131991 0.00972258769184024" rpy="0 0 0"/>
+        <mass value="0.025"/>
+        <inertia ixx="0.00007371" ixy="-0.00000113" ixz="0.00000021"
+                 iyy="0.00000781" iyz="-0.00001372" izz="0.0000747"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://piper_description/meshes/link8.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="0.792156862745098 0.819607843137255 0.933333333333333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <mesh filename="package://piper_description/meshes/link8.STL"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- joint8 mimics joint7 with multiplier=-1 so it mirrors the right finger. -->
+    <joint name="joint8" type="prismatic">
+      <origin xyz="0 0 0.1358" rpy="1.5708 0 -3.1416"/>
+      <parent link="gripper_base"/>
+      <child link="link8"/>
+      <axis xyz="0 0 -1"/>
+      <limit lower="-0.035" upper="0" effort="10" velocity="1"/>
+      <mimic joint="joint7" multiplier="-1.0" offset="0.0"/>
+    </joint>
+  </xacro:macro>
+</robot>

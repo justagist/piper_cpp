@@ -10,6 +10,7 @@
 #include "rclcpp/logging.hpp"
 
 #include "piper_cpp/interface/piper_interface_v2.h"
+#include "piper_cpp/types/control.h"
 
 namespace piper_cpp_ros
 {
@@ -22,6 +23,10 @@ constexpr double kMdToRad = 1.0 / kRadToMd;
 // piper_cpp's high-speed feedback reports motor_speed in 0.001 rad/s and effort in 0.001 N*m.
 constexpr double kMilliToUnit = 1.0e-3;
 
+// Gripper feedback / command: jaw stroke is in 0.001 mm = micrometers (1 um = 1e-6 m).
+constexpr double kUmToM = 1.0e-6;
+constexpr double kMToUm = 1.0e6;
+
 inline int32_t radToMd(double rad) { return static_cast<int32_t>(std::lround(rad * kRadToMd)); }
 inline double mdToRad(int32_t md) { return static_cast<double>(md) * kMdToRad; }
 
@@ -29,19 +34,10 @@ constexpr auto kLogger = "PiperHardware";
 } // namespace
 
 hardware_interface::CallbackReturn
-PiperHardware::on_init(const hardware_interface::HardwareComponentInterfaceParams& params)
+    PiperHardware::on_init(const hardware_interface::HardwareComponentInterfaceParams& params)
 {
     if (hardware_interface::SystemInterface::on_init(params) != hardware_interface::CallbackReturn::SUCCESS)
     {
-        return hardware_interface::CallbackReturn::ERROR;
-    }
-
-    if (info_.joints.size() != kNumJoints)
-    {
-        RCLCPP_ERROR(
-            rclcpp::get_logger(kLogger), "Expected %zu joints in <ros2_control>, got %zu", kNumJoints,
-            info_.joints.size()
-        );
         return hardware_interface::CallbackReturn::ERROR;
     }
 
@@ -50,6 +46,15 @@ PiperHardware::on_init(const hardware_interface::HardwareComponentInterfaceParam
         auto it = info_.hardware_parameters.find(key);
         return it != info_.hardware_parameters.end() ? it->second : def;
     };
+    auto parse_bool = [](const std::string& v, bool def) -> bool
+    {
+        if (v == "true" || v == "True" || v == "1")
+            return true;
+        if (v == "false" || v == "False" || v == "0")
+            return false;
+        return def;
+    };
+
     can_interface_ = get_param("can_interface", "can0");
     try
     {
@@ -63,24 +68,51 @@ PiperHardware::on_init(const hardware_interface::HardwareComponentInterfaceParam
         speed_pct_ = 0;
     if (speed_pct_ > 100)
         speed_pct_ = 100;
+    go_to_zero_on_activate_ = parse_bool(get_param("go_to_zero_on_activate", "true"), true);
+    with_gripper_ = parse_bool(get_param("with_gripper", "false"), false);
+    home_gripper_on_activate_ = parse_bool(get_param("home_gripper_on_activate", "false"), false);
+    try
     {
-        auto v = get_param("go_to_zero_on_activate", "true");
-        go_to_zero_on_activate_ = !(v == "false" || v == "False" || v == "0");
+        gripper_max_effort_nm_ = std::stod(get_param("gripper_max_effort", "1.0"));
+    }
+    catch (const std::exception&)
+    {
+        gripper_max_effort_nm_ = 1.0;
+    }
+    // Gripper firmware accepts 0..5000 milli-N*m (0..5 N*m).
+    {
+        long milli = std::lround(gripper_max_effort_nm_ * 1000.0);
+        if (milli < 0)
+            milli = 0;
+        if (milli > 5000)
+            milli = 5000;
+        gripper_effort_milli_nm_ = static_cast<uint16_t>(milli);
     }
 
-    hw_states_position_.assign(kNumJoints, 0.0);
-    hw_states_velocity_.assign(kNumJoints, 0.0);
-    hw_states_effort_.assign(kNumJoints, 0.0);
-    hw_commands_position_.assign(kNumJoints, 0.0);
-
-    for (const auto& joint : info_.joints)
+    const std::size_t expected_joints = kArmJoints + (with_gripper_ ? 1u : 0u);
+    if (info_.joints.size() != expected_joints)
     {
-        if (joint.command_interfaces.size() != 1
-            || joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
+        RCLCPP_ERROR(
+            rclcpp::get_logger(kLogger), "Expected %zu joints in <ros2_control> (with_gripper=%s), got %zu",
+            expected_joints, with_gripper_ ? "true" : "false", info_.joints.size()
+        );
+        return hardware_interface::CallbackReturn::ERROR;
+    }
+
+    hw_states_position_.assign(kArmJoints, 0.0);
+    hw_states_velocity_.assign(kArmJoints, 0.0);
+    hw_states_effort_.assign(kArmJoints, 0.0);
+    hw_commands_position_.assign(kArmJoints, 0.0);
+
+    for (std::size_t i = 0; i < kArmJoints; ++i)
+    {
+        const auto& joint = info_.joints[i];
+        if (joint.command_interfaces.size() != 1 ||
+            joint.command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
         {
             RCLCPP_ERROR(
                 rclcpp::get_logger(kLogger),
-                "Joint '%s' must declare exactly one command interface, of type 'position'.", joint.name.c_str()
+                "Arm joint '%s' must declare exactly one command interface, of type 'position'.", joint.name.c_str()
             );
             return hardware_interface::CallbackReturn::ERROR;
         }
@@ -89,14 +121,13 @@ PiperHardware::on_init(const hardware_interface::HardwareComponentInterfaceParam
         {
             if (iface.name == hardware_interface::HW_IF_POSITION)
                 has_pos_state = true;
-            else if (iface.name == hardware_interface::HW_IF_VELOCITY
-                     || iface.name == hardware_interface::HW_IF_EFFORT)
+            else if (iface.name == hardware_interface::HW_IF_VELOCITY || iface.name == hardware_interface::HW_IF_EFFORT)
                 continue;
             else
             {
                 RCLCPP_ERROR(
                     rclcpp::get_logger(kLogger),
-                    "Joint '%s' declares unsupported state interface '%s'. Supported: position, velocity, effort.",
+                    "Arm joint '%s' declares unsupported state interface '%s'. Supported: position, velocity, effort.",
                     joint.name.c_str(), iface.name.c_str()
                 );
                 return hardware_interface::CallbackReturn::ERROR;
@@ -105,17 +136,63 @@ PiperHardware::on_init(const hardware_interface::HardwareComponentInterfaceParam
         if (!has_pos_state)
         {
             RCLCPP_ERROR(
-                rclcpp::get_logger(kLogger), "Joint '%s' must declare a 'position' state interface.",
+                rclcpp::get_logger(kLogger), "Arm joint '%s' must declare a 'position' state interface.",
                 joint.name.c_str()
             );
             return hardware_interface::CallbackReturn::ERROR;
         }
     }
 
+    if (with_gripper_)
+    {
+        const auto& gj = info_.joints[kArmJoints];
+        if (gj.command_interfaces.size() != 1 || gj.command_interfaces[0].name != hardware_interface::HW_IF_POSITION)
+        {
+            RCLCPP_ERROR(
+                rclcpp::get_logger(kLogger),
+                "Gripper joint '%s' must declare exactly one command interface, of type 'position'.", gj.name.c_str()
+            );
+            return hardware_interface::CallbackReturn::ERROR;
+        }
+        bool has_pos_state = false;
+        for (const auto& iface : gj.state_interfaces)
+        {
+            if (iface.name == hardware_interface::HW_IF_POSITION)
+                has_pos_state = true;
+            else if (iface.name == hardware_interface::HW_IF_EFFORT)
+                continue;
+            else
+            {
+                RCLCPP_ERROR(
+                    rclcpp::get_logger(kLogger),
+                    "Gripper joint '%s' declares unsupported state interface '%s'. Supported: position, effort.",
+                    gj.name.c_str(), iface.name.c_str()
+                );
+                return hardware_interface::CallbackReturn::ERROR;
+            }
+        }
+        if (!has_pos_state)
+        {
+            RCLCPP_ERROR(
+                rclcpp::get_logger(kLogger), "Gripper joint '%s' must declare a 'position' state interface.",
+                gj.name.c_str()
+            );
+            return hardware_interface::CallbackReturn::ERROR;
+        }
+    }
+
     RCLCPP_INFO(
-        rclcpp::get_logger(kLogger), "Configured for can_interface='%s', speed_pct=%d, go_to_zero_on_activate=%s",
-        can_interface_.c_str(), speed_pct_, go_to_zero_on_activate_ ? "true" : "false"
+        rclcpp::get_logger(kLogger),
+        "Configured for can_interface='%s', speed_pct=%d, go_to_zero_on_activate=%s, with_gripper=%s",
+        can_interface_.c_str(), speed_pct_, go_to_zero_on_activate_ ? "true" : "false", with_gripper_ ? "true" : "false"
     );
+    if (with_gripper_)
+    {
+        RCLCPP_INFO(
+            rclcpp::get_logger(kLogger), "Gripper: joint='%s', max_effort=%.3f N*m, home_on_activate=%s",
+            info_.joints[kArmJoints].name.c_str(), gripper_max_effort_nm_, home_gripper_on_activate_ ? "true" : "false"
+        );
+    }
 
     return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -166,8 +243,7 @@ hardware_interface::CallbackReturn PiperHardware::on_activate(const rclcpp_lifec
     if (go_to_zero_on_activate_)
     {
         RCLCPP_INFO(
-            rclcpp::get_logger(kLogger),
-            "Driving joints to zero before handing over to the controller manager..."
+            rclcpp::get_logger(kLogger), "Driving joints to zero before handing over to the controller manager..."
         );
         const auto zero_dt = 20ms;
         const auto zero_duration = 3s;
@@ -201,6 +277,47 @@ hardware_interface::CallbackReturn PiperHardware::on_activate(const rclcpp_lifec
     hw_states_position_[5] = mdToRad(js.value.joint_6);
     hw_commands_position_ = hw_states_position_;
 
+    if (with_gripper_)
+    {
+        // Optionally latch the current jaw position as zero. This re-calibrates the gripper
+        // at whatever pose the jaws happen to be in right now -- only enable if you always
+        // activate from a known reference (typically fully closed).
+        if (home_gripper_on_activate_)
+        {
+            RCLCPP_INFO(
+                rclcpp::get_logger(kLogger),
+                "home_gripper_on_activate=true -- latching current jaw position as gripper zero."
+            );
+            piper_->setGripperZero();
+            std::this_thread::sleep_for(50ms);
+        }
+
+        auto gs = piper_->getGripperStates();
+        auto g_t0 = steady_clock::now();
+        while (!gs.is_valid)
+        {
+            if (steady_clock::now() - g_t0 > 2s)
+            {
+                RCLCPP_ERROR(rclcpp::get_logger(kLogger), "Timed out waiting for gripper feedback.");
+                return hardware_interface::CallbackReturn::ERROR;
+            }
+            std::this_thread::sleep_for(20ms);
+            gs = piper_->getGripperStates();
+        }
+        hw_state_gripper_position_ = static_cast<double>(gs.value.grippers_angle) * kUmToM;
+        hw_state_gripper_effort_ = static_cast<double>(gs.value.grippers_effort) * kMilliToUnit;
+        hw_command_gripper_position_ = hw_state_gripper_position_;
+        if (!gs.value.foc_status.homing_status)
+        {
+            RCLCPP_WARN(
+                rclcpp::get_logger(kLogger),
+                "Gripper has not been homed (homing_status=false). Position commands will be ignored "
+                "by the firmware until setGripperZero() is sent. Set home_gripper_on_activate:=true "
+                "to home automatically (only if jaws start from a known reference)."
+            );
+        }
+    }
+
     active_.store(true, std::memory_order_release);
     RCLCPP_INFO(rclcpp::get_logger(kLogger), "Activated. Ready to stream joint targets.");
     return hardware_interface::CallbackReturn::SUCCESS;
@@ -229,8 +346,8 @@ hardware_interface::CallbackReturn PiperHardware::on_cleanup(const rclcpp_lifecy
 std::vector<hardware_interface::StateInterface> PiperHardware::export_state_interfaces()
 {
     std::vector<hardware_interface::StateInterface> ifaces;
-    ifaces.reserve(kNumJoints * 3);
-    for (std::size_t i = 0; i < kNumJoints; ++i)
+    ifaces.reserve(kArmJoints * 3 + (with_gripper_ ? 2u : 0u));
+    for (std::size_t i = 0; i < kArmJoints; ++i)
     {
         for (const auto& iface : info_.joints[i].state_interfaces)
         {
@@ -242,16 +359,32 @@ std::vector<hardware_interface::StateInterface> PiperHardware::export_state_inte
                 ifaces.emplace_back(info_.joints[i].name, iface.name, &hw_states_effort_[i]);
         }
     }
+    if (with_gripper_)
+    {
+        const auto& gj = info_.joints[kArmJoints];
+        for (const auto& iface : gj.state_interfaces)
+        {
+            if (iface.name == hardware_interface::HW_IF_POSITION)
+                ifaces.emplace_back(gj.name, iface.name, &hw_state_gripper_position_);
+            else if (iface.name == hardware_interface::HW_IF_EFFORT)
+                ifaces.emplace_back(gj.name, iface.name, &hw_state_gripper_effort_);
+        }
+    }
     return ifaces;
 }
 
 std::vector<hardware_interface::CommandInterface> PiperHardware::export_command_interfaces()
 {
     std::vector<hardware_interface::CommandInterface> ifaces;
-    ifaces.reserve(kNumJoints);
-    for (std::size_t i = 0; i < kNumJoints; ++i)
+    ifaces.reserve(kArmJoints + (with_gripper_ ? 1u : 0u));
+    for (std::size_t i = 0; i < kArmJoints; ++i)
     {
         ifaces.emplace_back(info_.joints[i].name, hardware_interface::HW_IF_POSITION, &hw_commands_position_[i]);
+    }
+    if (with_gripper_)
+    {
+        const auto& gj = info_.joints[kArmJoints];
+        ifaces.emplace_back(gj.name, hardware_interface::HW_IF_POSITION, &hw_command_gripper_position_);
     }
     return ifaces;
 }
@@ -273,11 +406,20 @@ hardware_interface::return_type PiperHardware::read(const rclcpp::Time&, const r
     auto hs = piper_->getArmHighSpeedFeedbacks();
     if (hs.is_valid)
     {
-        for (std::size_t i = 0; i < kNumJoints; ++i)
+        for (std::size_t i = 0; i < kArmJoints; ++i)
         {
             const auto& fb = hs.value.high_spd_feedbacks[i];
             hw_states_velocity_[i] = static_cast<double>(fb.motor_speed) * kMilliToUnit;
             hw_states_effort_[i] = static_cast<double>(fb.effort) * kMilliToUnit;
+        }
+    }
+    if (with_gripper_)
+    {
+        auto gs = piper_->getGripperStates();
+        if (gs.is_valid)
+        {
+            hw_state_gripper_position_ = static_cast<double>(gs.value.grippers_angle) * kUmToM;
+            hw_state_gripper_effort_ = static_cast<double>(gs.value.grippers_effort) * kMilliToUnit;
         }
     }
     return hardware_interface::return_type::OK;
@@ -294,6 +436,13 @@ hardware_interface::return_type PiperHardware::write(const rclcpp::Time&, const 
         radToMd(hw_commands_position_[0]), radToMd(hw_commands_position_[1]), radToMd(hw_commands_position_[2]),
         radToMd(hw_commands_position_[3]), radToMd(hw_commands_position_[4]), radToMd(hw_commands_position_[5])
     );
+    if (with_gripper_)
+    {
+        // Gripper firmware auto-disables ~1s after the last frame, so we must keep streaming
+        // Enable along with the target angle every cycle.
+        const int32_t angle_um = static_cast<int32_t>(std::lround(hw_command_gripper_position_ * kMToUm));
+        piper_->controlGripper(angle_um, gripper_effort_milli_nm_, piper_cpp::GripperStatusCode::Enable);
+    }
     return hardware_interface::return_type::OK;
 }
 

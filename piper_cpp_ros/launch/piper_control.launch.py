@@ -7,16 +7,14 @@ Spawns:
   - joint_state_broadcaster
   - joint_trajectory_controller
   - joint_position_controller (loaded but not started; activate from CLI when needed)
+  - gripper_controller (only when with_gripper:=true)
 
-Default URDF: piper_cpp_ros/urdf/piper_with_ros2_control.urdf.xacro
-  (wraps piper_description's piper_no_gripper_description.xacro and inserts the ros2_control
-  block from piper.ros2_control.xacro.)
-
-To run a different URDF, override `description_package` and `description_file`.
+To run a different URDF, override `description_package`, `description_file`, and
+`controllers_file` directly -- those take precedence over the with_gripper toggle.
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, OpaqueFunction, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 from launch.substitutions import (
     Command,
@@ -29,40 +27,59 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
-def generate_launch_description():
-    description_package = LaunchConfiguration("description_package")
-    description_file = LaunchConfiguration("description_file")
-    controllers_file = LaunchConfiguration("controllers_file")
-    can_interface = LaunchConfiguration("can_interface")
-    speed_pct = LaunchConfiguration("speed_pct")
-    go_to_zero_on_activate = LaunchConfiguration("go_to_zero_on_activate")
-
-    robot_description_content = Command(
-        [
-            PathJoinSubstitution([FindExecutable(name="xacro")]),
-            " ",
-            PathJoinSubstitution(
-                [FindPackageShare(description_package), "urdf", description_file]
-            ),
-            " ",
-            "can_interface:=",
-            can_interface,
-            " ",
-            "speed_pct:=",
-            speed_pct,
-            " ",
-            "go_to_zero_on_activate:=",
-            go_to_zero_on_activate,
-        ]
+def _build_actions(context, *args, **kwargs):
+    description_package = LaunchConfiguration("description_package").perform(context)
+    description_file_arg = LaunchConfiguration("description_file").perform(context)
+    controllers_file_arg = LaunchConfiguration("controllers_file").perform(context)
+    can_interface = LaunchConfiguration("can_interface").perform(context)
+    speed_pct = LaunchConfiguration("speed_pct").perform(context)
+    go_to_zero_on_activate = LaunchConfiguration("go_to_zero_on_activate").perform(context)
+    with_gripper = LaunchConfiguration("with_gripper").perform(context).lower() in (
+        "true",
+        "1",
     )
-    # Wrap with ParameterValue(..., value_type=str) so launch_ros doesn't try to YAML-parse
-    # the URDF (long strings with `:` / newlines look like YAML to its type sniffer).
+    gripper_max_effort = LaunchConfiguration("gripper_max_effort").perform(context)
+    home_gripper_on_activate = LaunchConfiguration("home_gripper_on_activate").perform(
+        context
+    )
+
+    if not description_file_arg:
+        description_file_arg = (
+            "piper_with_gripper_with_ros2_control.urdf.xacro"
+            if with_gripper
+            else "piper_with_ros2_control.urdf.xacro"
+        )
+    if not controllers_file_arg:
+        controllers_file_arg = "piper_controllers.yaml"
+
+    xacro_cmd = [
+        PathJoinSubstitution([FindExecutable(name="xacro")]),
+        " ",
+        PathJoinSubstitution(
+            [FindPackageShare(description_package), "urdf", description_file_arg]
+        ),
+        " ",
+        f"can_interface:={can_interface}",
+        " ",
+        f"speed_pct:={speed_pct}",
+        " ",
+        f"go_to_zero_on_activate:={go_to_zero_on_activate}",
+    ]
+    if with_gripper:
+        xacro_cmd += [
+            " ",
+            f"gripper_max_effort:={gripper_max_effort}",
+            " ",
+            f"home_gripper_on_activate:={home_gripper_on_activate}",
+        ]
+
+    robot_description_content = Command(xacro_cmd)
     robot_description = {
         "robot_description": ParameterValue(robot_description_content, value_type=str)
     }
 
     controllers_yaml = PathJoinSubstitution(
-        [FindPackageShare("piper_cpp_ros"), "config", controllers_file]
+        [FindPackageShare("piper_cpp_ros"), "config", controllers_file_arg]
     )
 
     control_node = Node(
@@ -112,30 +129,58 @@ def generate_launch_description():
         ],
     )
 
-    # Spawn JSB first; once it's up, spawn JTC and the forward controller.
+    post_jsb_actions = [spawn_jtc, spawn_fwd]
+    if with_gripper:
+        spawn_gripper = Node(
+            package="controller_manager",
+            executable="spawner",
+            arguments=[
+                "gripper_controller",
+                "--controller-manager",
+                "/controller_manager",
+            ],
+        )
+        post_jsb_actions.append(spawn_gripper)
+
     delay_after_jsb = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=spawn_jsb,
-            on_exit=[spawn_jtc, spawn_fwd],
+            on_exit=post_jsb_actions,
         )
     )
 
+    return [rsp_node, control_node, spawn_jsb, delay_after_jsb]
+
+
+def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("description_package", default_value="piper_cpp_ros"),
-            DeclareLaunchArgument(
-                "description_file",
-                default_value="piper_with_ros2_control.urdf.xacro",
-            ),
-            DeclareLaunchArgument(
-                "controllers_file", default_value="piper_controllers.yaml"
-            ),
+            # Empty default lets _build_actions pick a gripper-aware default. Override to
+            # a specific filename to force a particular URDF.
+            DeclareLaunchArgument("description_file", default_value=""),
+            DeclareLaunchArgument("controllers_file", default_value=""),
             DeclareLaunchArgument("can_interface", default_value="can0"),
             DeclareLaunchArgument("speed_pct", default_value="30"),
             DeclareLaunchArgument("go_to_zero_on_activate", default_value="true"),
-            rsp_node,
-            control_node,
-            spawn_jsb,
-            delay_after_jsb,
+            DeclareLaunchArgument(
+                "with_gripper",
+                default_value="false",
+                description="Expose the parallel-jaw gripper as a 7th prismatic joint and "
+                "spawn a gripper_controller for it.",
+            ),
+            DeclareLaunchArgument(
+                "gripper_max_effort",
+                default_value="1.0",
+                description="Max gripper torque in N*m (range 0..5). Ignored unless "
+                "with_gripper:=true.",
+            ),
+            DeclareLaunchArgument(
+                "home_gripper_on_activate",
+                default_value="false",
+                description="Latch the current jaw position as gripper zero on activate. "
+                "Only enable if you always activate from a known reference.",
+            ),
+            OpaqueFunction(function=_build_actions),
         ]
     )

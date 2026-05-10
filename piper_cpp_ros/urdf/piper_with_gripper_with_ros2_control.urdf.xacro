@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<!--
+  Top-level xacro for the Piper arm + parallel-jaw gripper. Composes the no-gripper arm
+  description with this package's vendored gripper snippet (piper_gripper.urdf.xacro)
+  and adds the ros2_control block configured with with_gripper:=true.
+
+  Why not include piper_description.xacro directly?
+    - That xacro pulls in a Gazebo plugin block that references $(find piper_gazebo),
+      and piper_gazebo isn't a dependency of this stack.
+    - Even the static piper_description.urdf would work geometrically, but it ships
+      joint8 as an independent prismatic joint with no mimic. Without a mimic, RSP /
+      MoveIt have no way to derive joint8's pose (the SDK only drives joint7), and
+      MoveIt's planning_scene_monitor warns "Missing joint8" until a state arrives.
+    - Vendoring just the gripper section in piper_gripper.urdf.xacro lets us bake the
+      mimic in once, here, with no launch-time URDF post-processing. Mesh references
+      still point at piper_description's mesh package.
+
+  Companion to `piper_with_ros2_control.urdf.xacro` (no gripper). Use that one if your
+  arm has no gripper attached.
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="piper">
+
+  <!-- Arm (joints 1-6, base_link..link6) from piper_description. Same include as
+       piper_with_ros2_control.urdf.xacro uses for the no-gripper case. -->
+  <xacro:include filename="$(find piper_description)/urdf/piper_no_gripper_description.xacro"/>
+
+  <!-- Gripper geometry + joints (joint7 driven, joint8 mimics joint7). -->
+  <xacro:include filename="$(find piper_cpp_ros)/urdf/piper_gripper.urdf.xacro"/>
+  <xacro:piper_gripper/>
+
+  <!-- ros2_control hardware interface block. -->
+  <xacro:include filename="$(find piper_cpp_ros)/urdf/piper.ros2_control.xacro"/>
+
+  <xacro:arg name="can_interface" default="can0"/>
+  <xacro:arg name="speed_pct" default="30"/>
+  <xacro:arg name="go_to_zero_on_activate" default="true"/>
+  <xacro:arg name="gripper_max_effort" default="1.0"/>
+  <xacro:arg name="home_gripper_on_activate" default="false"/>
+
+  <xacro:piper_ros2_control
+      can_interface="$(arg can_interface)"
+      speed_pct="$(arg speed_pct)"
+      go_to_zero_on_activate="$(arg go_to_zero_on_activate)"
+      with_gripper="true"
+      gripper_jname="joint7"
+      gripper_max_effort="$(arg gripper_max_effort)"
+      home_gripper_on_activate="$(arg home_gripper_on_activate)"/>
+</robot>

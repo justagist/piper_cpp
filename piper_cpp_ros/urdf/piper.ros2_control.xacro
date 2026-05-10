@@ -9,22 +9,39 @@
       <xacro:piper_ros2_control/>
 
     Parameters:
-      name                    Name of the <ros2_control> system block (default 'piper').
-      can_interface           SocketCAN interface (default 'can0').
-      speed_pct               Speed-cap percentage forwarded to MoveJ (default 30).
-      go_to_zero_on_activate  Drive joints to zero on activation (default true).
+      name                       Name of the <ros2_control> system block (default 'piper').
+      can_interface              SocketCAN interface (default 'can0').
+      speed_pct                  Speed-cap percentage forwarded to MoveJ (default 30).
+      go_to_zero_on_activate     Drive joints to zero on activation (default true).
+      with_gripper               Expose a 7th prismatic joint for the parallel-jaw gripper
+                                 (default false).
+      gripper_jname              Name of the gripper joint when with_gripper is true.
+                                 Defaults to 'joint7' to match piper_description.xacro,
+                                 where joint7 is the right-finger prismatic joint
+                                 (range 0..0.035 m).
+      gripper_max_effort         Max gripper torque in N*m, range 0..5 (default 1.0).
+      home_gripper_on_activate   Set the current jaw position as gripper zero on
+                                 activation. Only enable if you always activate from a
+                                 known reference (default false).
   -->
   <xacro:macro name="piper_ros2_control"
                params="name:=piper
                        can_interface:=can0
                        speed_pct:=30
-                       go_to_zero_on_activate:=true">
+                       go_to_zero_on_activate:=true
+                       with_gripper:=false
+                       gripper_jname:=joint7
+                       gripper_max_effort:=1.0
+                       home_gripper_on_activate:=false">
     <ros2_control name="${name}" type="system">
       <hardware>
         <plugin>piper_cpp_ros/PiperHardware</plugin>
         <param name="can_interface">${can_interface}</param>
         <param name="speed_pct">${speed_pct}</param>
         <param name="go_to_zero_on_activate">${go_to_zero_on_activate}</param>
+        <param name="with_gripper">${with_gripper}</param>
+        <param name="gripper_max_effort">${gripper_max_effort}</param>
+        <param name="home_gripper_on_activate">${home_gripper_on_activate}</param>
       </hardware>
 
       <xacro:macro name="piper_joint" params="jname">
@@ -42,6 +59,14 @@
       <xacro:piper_joint jname="joint4"/>
       <xacro:piper_joint jname="joint5"/>
       <xacro:piper_joint jname="joint6"/>
+
+      <xacro:if value="${with_gripper}">
+        <joint name="${gripper_jname}">
+          <command_interface name="position"/>
+          <state_interface name="position"/>
+          <state_interface name="effort"/>
+        </joint>
+      </xacro:if>
     </ros2_control>
   </xacro:macro>
 </robot>
