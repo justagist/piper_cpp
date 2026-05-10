@@ -185,7 +185,7 @@ piper_cpp/
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](../LICENSE).
 
 Ported from [`piper_sdk`](https://github.com/agilexrobotics/piper_sdk) (MIT,
 © 2024 Agilex Robotice Co., Ltd.).

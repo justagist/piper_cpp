@@ -1,0 +1,10 @@
+<library path="piper_cpp_ros">
+  <class
+    name="piper_cpp_ros/PiperHardware"
+    type="piper_cpp_ros::PiperHardware"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>
+      ros2_control hardware interface for the AgileX Piper 6-DOF arm.
+    </description>
+  </class>
+</library>
