@@ -28,23 +28,20 @@ def _build_actions(context, *args, **kwargs):
     piper_ros_share = get_package_share_directory("piper_cpp_ros")
 
     joint_limits_yaml = os.path.join(moveit_share, "config", "joint_limits.yaml")
+    moveit_controllers_yaml = os.path.join(
+        moveit_share, "config", "moveit_controllers.yaml"
+    )
 
     if with_gripper:
         urdf_xacro = os.path.join(
             piper_ros_share, "urdf", "piper_with_gripper_with_ros2_control.urdf.xacro"
         )
         srdf_xacro = os.path.join(moveit_share, "srdf", "piper_with_gripper.srdf.xacro")
-        moveit_controllers_yaml = os.path.join(
-            moveit_share, "config", "moveit_controllers_with_gripper.yaml"
-        )
     else:
         urdf_xacro = os.path.join(
             piper_ros_share, "urdf", "piper_with_ros2_control.urdf.xacro"
         )
         srdf_xacro = os.path.join(moveit_share, "srdf", "piper.srdf.xacro")
-        moveit_controllers_yaml = os.path.join(
-            moveit_share, "config", "moveit_controllers.yaml"
-        )
 
     moveit_config = (
         MoveItConfigsBuilder("piper", package_name="piper_cpp_moveit")
