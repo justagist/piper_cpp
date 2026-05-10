@@ -4,6 +4,8 @@ MoveIt 2 configuration for the AgileX Piper 6-DOF arm. Plans against the URDF fr
 `piper_description` and dispatches resulting trajectories through the
 `joint_trajectory_controller` exposed by [`piper_cpp_ros`](../piper_cpp_ros).
 
+[![piper_cpp.gif](https://media.githubusercontent.com/media/justagist/_assets/refs/heads/main/piper_cpp/piper_cpp.gif)](https://media.githubusercontent.com/media/justagist/_assets/refs/heads/main/piper_cpp/piper_cpp.gif)
+
 ## Build
 
 Depends on:
