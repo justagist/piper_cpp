@@ -16,14 +16,18 @@ add_library(piper_cpp STATIC
     src/protocol/piper_parser_v2.cpp
     src/interface/piper_interface_v2.cpp
 )
+# Built as a static lib but needs to be linkable into shared libs (e.g. ROS plugins).
+set_target_properties(piper_cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(piper_cpp
-    PUBLIC include
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
     PRIVATE ${LIBCANSOCKET_INCLUDE_DIRS}
 )
 
 target_link_libraries(piper_cpp
-    PRIVATE ${LIBCANSOCKET_LIBRARIES}
+    PUBLIC ${LIBCANSOCKET_LIBRARIES}
 )
 
 function(add_piper_executable exe_name src_file)
@@ -50,7 +54,9 @@ add_piper_executable(piper_reset piper_reset.cpp)
 
 include(GNUInstallDirs)
 install(TARGETS piper_cpp
+    EXPORT piper_cppTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(TARGETS piper_cpp_can_utils_demo
         piper_cpp_std_can_interface_read
@@ -70,3 +76,26 @@ install(TARGETS piper_cpp_can_utils_demo
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(EXPORT piper_cppTargets
+    FILE piper_cppTargets.cmake
+    NAMESPACE piper_cpp::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/piper_cpp
+)
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    cmake/piper_cppConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/piper_cppConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/piper_cpp
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/piper_cppConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/piper_cppConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/piper_cppConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/piper_cpp
+)
