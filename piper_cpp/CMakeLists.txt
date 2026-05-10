@@ -40,6 +40,7 @@ add_piper_executable(can_activate can_activate.cpp)
 add_piper_executable(piper_enable piper_enable.cpp)
 add_piper_executable(piper_gripper_sweep piper_gripper_sweep.cpp)
 add_piper_executable(piper_joint_ctrl_demo piper_joint_ctrl_demo.cpp)
+add_piper_executable(piper_joint_sine_demo piper_joint_sine_demo.cpp)
 add_piper_executable(piper_end_pose_demo piper_end_pose_demo.cpp)
 add_piper_executable(piper_go_zero piper_go_zero.cpp)
 add_piper_executable(piper_set_zero piper_set_zero.cpp)
@@ -59,6 +60,7 @@ install(TARGETS piper_cpp_can_utils_demo
         piper_enable
         piper_gripper_sweep
         piper_joint_ctrl_demo
+        piper_joint_sine_demo
         piper_end_pose_demo
         piper_go_zero
         piper_set_zero
