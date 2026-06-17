@@ -1,0 +1,90 @@
+name: Publish APT package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Serialise publishes so concurrent releases can't race on the gh-pages branch.
+concurrency:
+  group: publish-apt
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-24.04   # noble - must match the apt repo Codename
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build & packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config libsocketcan-dev reprepro
+
+      - name: Determine package version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            RAW="${{ github.event.release.tag_name }}"
+          else
+            RAW="0.0.0-dev"
+          fi
+          echo "version=${RAW#v}" >> "$GITHUB_OUTPUT"
+          echo "Building piper_cpp version ${RAW#v}"
+
+      - name: Build & package (.deb via CPack)
+        run: |
+          cmake -S piper_cpp -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j"$(nproc)"
+          ( cd build && cpack -G DEB -D CPACK_PACKAGE_VERSION="${{ steps.ver.outputs.version }}" )
+          mkdir -p dist && mv build/*.deb dist/
+          ls -l dist
+
+      - name: Import GPG signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::error::GPG_PRIVATE_KEY secret is not set." && exit 1
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEYFPR=$(gpg --list-secret-keys --with-colons | awk -F: '$1=="fpr"{print $10; exit}')
+          echo "GPG_KEYFPR=$KEYFPR" >> "$GITHUB_ENV"
+
+      - name: Restore existing apt repo state from gh-pages
+        run: |
+          mkdir -p apt-repo
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch --depth 1 origin gh-pages
+            git archive FETCH_HEAD | tar -x -C apt-repo
+            echo "Restored existing repo state from gh-pages."
+          else
+            echo "No gh-pages branch yet; initialising a fresh apt repo."
+          fi
+
+      - name: Add packages to the apt repo (reprepro)
+        run: |
+          mkdir -p apt-repo/conf
+          sed "s/__SIGNING_KEY__/${GPG_KEYFPR}/" \
+            packaging/apt/conf/distributions > apt-repo/conf/distributions
+          for deb in dist/*.deb; do
+            reprepro -b apt-repo includedeb noble "$deb"
+          done
+          # Publish the public key (so users can trust the repo) and a landing page.
+          gpg --export "${GPG_KEYFPR}" > apt-repo/piper-cpp-archive-keyring.gpg
+          cp packaging/apt/index.html apt-repo/index.html
+
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./apt-repo
+          publish_branch: gh-pages
+          keep_files: false        # apt-repo already contains prior state + new debs
+          enable_jekyll: false     # writes .nojekyll so dists/ and pool/ serve verbatim
+          commit_message: "apt: publish ${{ steps.ver.outputs.version }}"

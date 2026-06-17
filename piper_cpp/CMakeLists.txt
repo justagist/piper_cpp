@@ -55,7 +55,7 @@ add_piper_executable(piper_reset piper_reset.cpp)
 include(GNUInstallDirs)
 install(TARGETS piper_cpp
     EXPORT piper_cppTargets
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT dev
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 install(TARGETS piper_cpp_can_utils_demo
@@ -73,14 +73,15 @@ install(TARGETS piper_cpp_can_utils_demo
         piper_set_role
         piper_read_firmware
         piper_reset
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT tools
 )
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT dev)
 
 install(EXPORT piper_cppTargets
     FILE piper_cppTargets.cmake
     NAMESPACE piper_cpp::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/piper_cpp
+    COMPONENT dev
 )
 
 include(CMakePackageConfigHelpers)
@@ -98,4 +99,39 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/piper_cppConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/piper_cppConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/piper_cpp
+    COMPONENT dev
 )
+
+# ------------------------------------------------------------------------------
+# Debian packaging (CPack): produces two .deb packages from the install rules above
+#   libpiper-cpp-dev -- static library, headers, CMake package config (component: dev)
+#   piper-cpp-tools  -- command-line demo / utility executables       (component: tools)
+# ------------------------------------------------------------------------------
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_NAME "piper-cpp")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "C++ SDK for the AgileX Piper 6-DOF arm")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/justagist/piper_cpp")
+set(CPACK_PACKAGE_CONTACT "Saif Sidhik <mail@saifsidhik.page>")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Saif Sidhik <mail@saifsidhik.page>")
+
+# One .deb per component, named per Debian policy (<name>_<version>_<arch>.deb).
+set(CPACK_DEB_COMPONENT_INSTALL ON)
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)   # auto-resolve runtime deps (e.g. libsocketcan2)
+
+# dev component -> libpiper-cpp-dev
+set(CPACK_DEBIAN_DEV_PACKAGE_NAME "libpiper-cpp-dev")
+set(CPACK_DEBIAN_DEV_PACKAGE_SECTION "libdevel")
+set(CPACK_DEBIAN_DEV_PACKAGE_DEPENDS "libsocketcan-dev, pkg-config")
+set(CPACK_COMPONENT_DEV_DESCRIPTION
+    "Development files (static library, headers, CMake config) for piper_cpp.")
+
+# tools component -> piper-cpp-tools
+set(CPACK_DEBIAN_TOOLS_PACKAGE_NAME "piper-cpp-tools")
+set(CPACK_DEBIAN_TOOLS_PACKAGE_SECTION "utils")
+set(CPACK_DEBIAN_TOOLS_PACKAGE_DEPENDS "libsocketcan2")  # SHLIBDEPS also detects this; explicit = deterministic
+set(CPACK_COMPONENT_TOOLS_DESCRIPTION
+    "Command-line demo and utility tools for the AgileX Piper arm.")
+
+include(CPack)

@@ -1,0 +1,10 @@
+# __SIGNING_KEY__ is substituted at publish time. Codename matches the target
+# Ubuntu release (noble = 24.04).
+Origin: piper_cpp
+Label: piper_cpp apt repository
+Codename: noble
+Suite: stable
+Components: main
+Architectures: amd64
+Description: AgileX Piper C++ SDK (standalone, non-ROS) Debian packages
+SignWith: __SIGNING_KEY__

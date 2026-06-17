@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>piper_cpp apt repository</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; }
+    code, pre { background: #f4f4f4; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; }
+    code { padding: 0.1rem 0.3rem; }
+    h1 { margin-bottom: 0.2rem; }
+    .sub { color: #666; margin-top: 0; }
+  </style>
+</head>
+<body>
+  <h1>piper_cpp apt repository</h1>
+  <p class="sub">Standalone (non-ROS) Debian packages for the AgileX Piper C++ SDK - Ubuntu 24.04 (noble), amd64.</p>
+
+  <h2>Install</h2>
+  <pre><code>sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://justagist.github.io/piper_cpp/piper-cpp-archive-keyring.gpg \
+  -o /etc/apt/keyrings/piper-cpp-archive-keyring.gpg
+
+echo "deb [signed-by=/etc/apt/keyrings/piper-cpp-archive-keyring.gpg] https://justagist.github.io/piper_cpp noble main" \
+  | sudo tee /etc/apt/sources.list.d/piper-cpp.list
+
+sudo apt update
+sudo apt install libpiper-cpp-dev   # headers + static lib + CMake config
+sudo apt install piper-cpp-tools     # optional: command-line utilities</code></pre>
+
+  <h2>Packages</h2>
+  <ul>
+    <li><code>libpiper-cpp-dev</code> - static library, headers, and CMake package config (<code>find_package(piper_cpp)</code>).</li>
+    <li><code>piper-cpp-tools</code> - command-line demo and utility executables.</li>
+  </ul>
+
+  <p>Source: <a href="https://github.com/justagist/piper_cpp">github.com/justagist/piper_cpp</a></p>
+</body>
+</html>

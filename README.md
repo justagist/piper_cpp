@@ -9,6 +9,20 @@ alone or, with `with_gripper:=true`, on the arm + gripper together.
 
 [![piper_cpp.gif](https://media.githubusercontent.com/media/justagist/_assets/refs/heads/main/piper_cpp/piper_cpp.gif)](https://media.githubusercontent.com/media/justagist/_assets/refs/heads/main/piper_cpp/piper_cpp.gif)
 
+## Install the C++ library via apt (Ubuntu 24.04, amd64)
+
+The standalone (non-ROS) `piper_cpp` library is published as Debian packages:
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://justagist.github.io/piper_cpp/piper-cpp-archive-keyring.gpg \
+  -o /etc/apt/keyrings/piper-cpp-archive-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/piper-cpp-archive-keyring.gpg] https://justagist.github.io/piper_cpp noble main" \
+  | sudo tee /etc/apt/sources.list.d/piper-cpp.list
+sudo apt update
+sudo apt install libpiper-cpp-dev   # headers + static lib + CMake config; `piper-cpp-tools` for the CLI utilities
+```
+
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+MIT - see [LICENSE](../LICENSE).
