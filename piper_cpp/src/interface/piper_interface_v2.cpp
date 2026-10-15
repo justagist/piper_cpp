@@ -42,7 +42,6 @@ PiperInterfaceV2::PiperInterfaceV2(
 
     // Query responses and command echoes arrive once, not periodically, so their age says
     // nothing about the link; only the periodic feedback streams keep the default timeout.
-    arm_current_end_vel_acc_.setHealthTimeout(kNoHealthTimeout);
     arm_crash_protection_rating_fb_.setHealthTimeout(kNoHealthTimeout);
     arm_gripper_teaching_pendant_fb_.setHealthTimeout(kNoHealthTimeout);
     arm_current_motor_angle_limit_max_spd_.setHealthTimeout(kNoHealthTimeout);

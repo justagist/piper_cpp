@@ -133,7 +133,8 @@ public:
 
     /// End-effector velocity/acceleration limits the arm currently has set (0.001 m/s,
     /// 0.001 rad/s, etc.). Response message; populated only after a periodic-feedback request
-    /// is enabled or after `sendArmParamEnquiryAndConfig(EndVelAcc)` is called.
+    /// is enabled or after `sendArmParamEnquiryAndConfig(EndVelAcc)` is called. Because it can
+    /// be streamed, it keeps the 1 s health timeout; after a one-shot enquiry rely on `is_valid`.
     StateSnapshot<ArmMsgCurrentEndVelAccParam> getArmCurrentEndVelAcc() const
     {
         return StateSnapshot(arm_current_end_vel_acc_);
