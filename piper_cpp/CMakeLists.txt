@@ -52,6 +52,12 @@ add_piper_executable(piper_set_role piper_set_role.cpp)
 add_piper_executable(piper_read_firmware piper_read_firmware.cpp)
 add_piper_executable(piper_reset piper_reset.cpp)
 
+option(BUILD_TESTING "Build the unit tests (requires GTest)" ON)
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(test)
+endif()
+
 include(GNUInstallDirs)
 install(TARGETS piper_cpp
     EXPORT piper_cppTargets

@@ -44,6 +44,15 @@ public:
         bool sdk_joint_limit = false, bool sdk_gripper_limit = false
     );
 
+    /// Construct over an already-open transport, e.g. one adopting a socket the caller opened.
+    /// Mainly for tests, which drive the interface through a socketpair instead of a CAN bus.
+    /// `can` must not be null and is single-use: once disconnected, `connectPort()` cannot
+    /// reopen it. The remaining parameters are as above.
+    PiperInterfaceV2(
+        std::unique_ptr<StdCanInterface> can, bool dh_offset = true, bool sdk_joint_limit = false,
+        bool sdk_gripper_limit = false
+    );
+
     /// Destructor; calls `disconnectPort()` if it hasn't been called already.
     ~PiperInterfaceV2();
 
@@ -65,9 +74,9 @@ public:
     /// @return true if the port opened (or was already open); false on initialisation failure.
     bool connectPort(bool can_init = false, bool piper_init = true, bool start_threads = true);
 
-    /// Stop the background read thread (if running) and close the CAN port. Joins the read
-    /// thread synchronously up to `timeout`; the destructor calls this with the default.
-    /// Idempotent.
+    /// Stop the background read thread (if running) and close the CAN port. Wakes the read
+    /// thread out of its blocking receive and joins it, so this returns promptly even on a
+    /// silent bus. `timeout` is currently unused and kept for API compatibility. Idempotent.
     void disconnectPort(std::chrono::milliseconds timeout = std::chrono::milliseconds{100});
 
     /// Fire the one-shot startup queries: per-motor angle/speed limits, per-motor acceleration
