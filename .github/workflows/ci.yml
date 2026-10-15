@@ -32,13 +32,14 @@ jobs:
         with:
           path: src/piper_cpp
       - name: Install dependencies
-        # piper_cpp has no package.xml, so rosdep cannot see its libsocketcan dependency.
+        # piper_cpp has no package.xml, so rosdep neither sees its libsocketcan dependency nor
+        # recognises it as a source package when piper_cpp_ros depends on it.
         # piper_description is an external runtime dependency not needed to build.
         run: |
           apt-get update
           apt-get install -y --no-install-recommends libsocketcan-dev libgtest-dev
           rosdep update
-          rosdep install --from-paths src --ignore-src -y --skip-keys piper_description
+          rosdep install --from-paths src --ignore-src -y --skip-keys "piper_cpp piper_description"
       - name: Build
         shell: bash
         run: |
