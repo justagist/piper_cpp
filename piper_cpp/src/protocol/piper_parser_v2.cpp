@@ -27,6 +27,30 @@ static int8_t bytesToInt8(const uint8_t *data) { return static_cast<int8_t>(data
 // For unsigned 8-bit
 static uint8_t bytesToUint8(const uint8_t *data) { return data[0]; }
 
+// Smallest payload each decoded ID needs: one past the last byte the decoder reads. A shorter
+// frame would otherwise be decoded from bytes that were never on the bus.
+static uint8_t requiredDlc(CanIDPiper id)
+{
+    switch (id)
+    {
+    case CanIDPiper::ARM_GRIPPER_FEEDBACK:
+    case CanIDPiper::ARM_FEEDBACK_CURRENT_MOTOR_ANGLE_LIMIT_MAX_SPD:
+        return 7;
+    case CanIDPiper::ARM_CRASH_PROTECTION_RATING_FEEDBACK:
+    case CanIDPiper::ARM_MOTION_CTRL_2:
+        return 6;
+    case CanIDPiper::ARM_GRIPPER_TEACHING_PENDANT_PARAM_FEEDBACK:
+    case CanIDPiper::ARM_FEEDBACK_CURRENT_MOTOR_MAX_ACC_LIMIT:
+        return 3;
+    case CanIDPiper::ARM_INSTRUCTION_RESPONSE_CONFIG:
+        return 2;
+    case CanIDPiper::ARM_FIRMWARE_READ:
+        return 0; // variable-length text chunk, copied by DLC
+    default:
+        return 8;
+    }
+}
+
 // Split a value into unsigned bytes (big-endian)
 inline void int16_to_bytes(uint16_t val, uint8_t *out)
 {
@@ -60,7 +84,14 @@ inline void int8_to_bytes(uint8_t val, uint8_t *out) { out[0] = val & 0xFF; }
 
 bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double timestamp, PiperMessage &msg)
 {
-    uint32_t can_id = rx_frame.can_id & CAN_EFF_MASK;
+    // The Piper protocol uses standard 11-bit data frames only; remote-request, error and
+    // extended frames must not be mistaken for feedback.
+    if (rx_frame.can_id & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG))
+    {
+        msg.type = ArmMsgType::Unknown;
+        return false;
+    }
+    uint32_t can_id = rx_frame.can_id & CAN_SFF_MASK;
     const uint8_t *data = rx_frame.data;
     auto can_enum_id = static_cast<CanIDPiper>(can_id);
     msg.can_id = can_id;
@@ -69,6 +100,11 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
         msg.type = canIdToMsgType(can_enum_id);
     }
     catch (...)
+    {
+        msg.type = ArmMsgType::Unknown;
+        return false;
+    }
+    if (rx_frame.can_dlc < requiredDlc(can_enum_id))
     {
         msg.type = ArmMsgType::Unknown;
         return false;
@@ -280,7 +316,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
     {
         msg.type = ArmMsgType::FirmwareRead;
         // Firmware data is just raw; store in vector for easy use
-        msg.firmware_data.assign(data, data + PiperMessage::raw_data_len);
+        msg.firmware_data.assign(data, data + rx_frame.can_dlc);
         break;
     }
 

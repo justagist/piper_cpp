@@ -1,0 +1,63 @@
+// Golden-frame tests for the V2 wire protocol: what the decoder accepts, how it interprets
+// signed fields, and that the encoder produces complete frames on its own.
+
+#include "piper_cpp/protocol/piper_parser_v2.h"
+
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <initializer_list>
+#include <linux/can.h>
+
+using piper_cpp::ArmMsgType;
+using piper_cpp::PiperMessage;
+using piper_cpp::PiperParserV2;
+
+namespace
+{
+
+can_frame frame(uint32_t id, std::initializer_list<uint8_t> bytes)
+{
+    can_frame f{};
+    f.can_id = id;
+    f.can_dlc = static_cast<uint8_t>(bytes.size());
+    std::copy(bytes.begin(), bytes.end(), f.data);
+    return f;
+}
+
+} // namespace
+
+TEST(PiperParserV2, RejectsFramesThatAreNotStandardData)
+{
+    PiperParserV2 parser;
+    PiperMessage msg;
+    const auto joints = frame(0x2A5, {0, 0, 0, 1, 0, 0, 0, 2});
+    ASSERT_TRUE(parser.decodeMessage(joints, 0.0, msg));
+
+    for (canid_t flag : {CAN_RTR_FLAG, CAN_EFF_FLAG, CAN_ERR_FLAG})
+    {
+        can_frame f = joints;
+        f.can_id |= flag;
+        EXPECT_FALSE(parser.decodeMessage(f, 0.0, msg)) << "flag 0x" << std::hex << flag;
+        EXPECT_EQ(msg.type, ArmMsgType::Unknown);
+    }
+}
+
+TEST(PiperParserV2, RejectsPayloadShorterThanTheFieldsRead)
+{
+    PiperParserV2 parser;
+    PiperMessage msg;
+
+    // Joint feedback reads all eight bytes.
+    EXPECT_FALSE(parser.decodeMessage(frame(0x2A5, {}), 0.0, msg));
+    EXPECT_FALSE(parser.decodeMessage(frame(0x2A5, {0, 0, 0, 1, 0, 0, 0}), 0.0, msg));
+    EXPECT_TRUE(parser.decodeMessage(frame(0x2A5, {0, 0, 0, 1, 0, 0, 0, 2}), 0.0, msg));
+
+    // Gripper feedback reads seven, so a seven-byte frame is complete and six is not.
+    EXPECT_FALSE(parser.decodeMessage(frame(0x2A8, {0, 0, 0, 1, 0, 0}), 0.0, msg));
+    EXPECT_TRUE(parser.decodeMessage(frame(0x2A8, {0, 0, 0, 1, 0, 0, 0}), 0.0, msg));
+
+    // Firmware text arrives in chunks of any length; only the bytes on the bus are kept.
+    ASSERT_TRUE(parser.decodeMessage(frame(0x4AF, {'S', '-', 'V'}), 0.0, msg));
+    EXPECT_EQ(msg.firmware_data, (std::vector<uint8_t>{'S', '-', 'V'}));
+}
