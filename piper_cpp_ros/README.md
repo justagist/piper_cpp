@@ -242,6 +242,10 @@ shows the pattern.
   `on_deactivate()`, joint motors stay enabled and hold the last commanded pose -- disabling
   motors here would drop the arm. If you want to deactivate, use `piper_cpp` API directly,
   or the shipped `piper_enable --disable` command from CLI (shipped with `piper_cpp`).
+- While active, `read()` returns an error if joint (or gripper) feedback stops arriving for
+  a second, and `write()` returns an error if any command is not a usable position or a CAN
+  send fails; nothing is sent when any part of the command set is invalid. The controller
+  manager then stops the controllers and the arm holds its last target, as on deactivation.
 - `update_rate` in [piper_controllers.yaml](config/piper_controllers.yaml) sets the
   read/write rate. 200 Hz is used, this is what the robot seem to expect; the CAN bus and
   arm firmware comfortably handle this and higher.
