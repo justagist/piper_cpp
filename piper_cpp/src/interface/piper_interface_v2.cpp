@@ -6,7 +6,7 @@
 namespace piper_cpp
 {
 
-static constexpr double MILLIDEG2RAD = 0.001 * 3.14 / 180;
+static constexpr double MILLIDEG2RAD = 0.001 * M_PI / 180;
 
 // Implementation of the PiperInterfaceV2 methods
 PiperInterfaceV2::PiperInterfaceV2(

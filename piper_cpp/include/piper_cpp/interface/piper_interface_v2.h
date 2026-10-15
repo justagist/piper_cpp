@@ -232,8 +232,8 @@ public:
     bool requestFirmwareVersion();
 
     /// Compute forward kinematics from the latest measured joint angles. Returns the cumulative
-    /// pose (position + orientation in the base frame) at each link, as a vector of 6-element
-    /// arrays. The last entry is the end-effector pose.
+    /// pose (position in mm + orientation in degrees, in the base frame) at each link, as a
+    /// vector of 6-element arrays. The last entry is the end-effector pose.
     ///
     /// @note This is computed on demand from `getArmJointStates()`; if the joint feedback isn't
     /// valid yet, returns the FK of zero joints and prints a warning to stderr.
