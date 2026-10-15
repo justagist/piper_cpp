@@ -7,8 +7,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <future>
+#include <linux/can.h>
 #include <sys/socket.h>
 #include <thread>
 #include <vector>
@@ -150,8 +153,15 @@ TEST(StdCanInterface, DeliversEveryFrameInOrder)
 
 TEST(StdCanInterface, InitFailureCanBeRetried)
 {
+    // Without raw CAN sockets init() fails before the step under test and proves nothing.
+    int probe = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+    if (probe < 0)
+        GTEST_SKIP() << "PF_CAN sockets unavailable: " << strerror(errno);
+    ::close(probe);
+
     // No such interface, so init() fails at the ifindex lookup. Before the fix the half-open
-    // socket was kept and a second init() reported success.
-    StdCanInterface can("piper_cpp_no_such_iface", 1000000, /*judge_flag=*/false, /*auto_init=*/true);
+    // socket was kept and the second init() reported success.
+    StdCanInterface can("piper_cpp_no_such_iface", 1000000, /*judge_flag=*/false, /*auto_init=*/false);
+    EXPECT_FALSE(can.init());
     EXPECT_FALSE(can.init());
 }
