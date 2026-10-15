@@ -74,9 +74,10 @@ public:
     /// @return true if the port opened (or was already open); false on initialisation failure.
     bool connectPort(bool can_init = false, bool piper_init = true, bool start_threads = true);
 
-    /// Stop the background read thread (if running) and close the CAN port. Wakes the read
-    /// thread out of its blocking receive and joins it, so this returns promptly even on a
-    /// silent bus. `timeout` is currently unused and kept for API compatibility. Idempotent.
+    /// Stop the background read thread (if running), close the CAN port and clear every cached
+    /// state, so a later session cannot read this one's feedback. Wakes the read thread out of
+    /// its blocking receive and joins it, so this returns promptly even on a silent bus.
+    /// `timeout` is currently unused and kept for API compatibility. Idempotent.
     void disconnectPort(std::chrono::milliseconds timeout = std::chrono::milliseconds{100});
 
     /// Fire the one-shot startup queries: per-motor angle/speed limits, per-motor acceleration
@@ -93,11 +94,13 @@ public:
     //   - `value`        : the payload itself
     //   - `timestamp`    : Unix-epoch timestamp (in seconds, double) of the last update
     //   - `hz`           : measured update rate based on inter-arrival time
-    //   - `is_valid`     : sticky -- true once at least one frame has been received
-    //   - `is_healthy`   : true if a frame has arrived in the last ~1 second
+    //   - `is_valid`     : true once every part of the message has been received this session
+    //   - `is_healthy`   : for periodic feedback, true while every part arrived within the last
+    //                      second; query responses and command echoes stay healthy once received
     //
-    // `is_valid` is only false during the brief window between `connectPort` returning and the
-    // first matching CAN frame arriving. Use `is_healthy` to detect a stalled or dropped feed.
+    // All five fields describe the same update. `is_valid` is false between `connectPort`
+    // returning and the first matching CAN frame arriving, and again after `disconnectPort`,
+    // which clears every cached state. Use `is_healthy` to detect a stalled or dropped feed.
 
     /// Latest arm status: control mode, motion status, error codes, teaching state, etc.
     /// Updates at ~200 Hz when the arm is connected. Drives `getArmHealth()`'s status field.
@@ -130,7 +133,8 @@ public:
 
     /// End-effector velocity/acceleration limits the arm currently has set (0.001 m/s,
     /// 0.001 rad/s, etc.). Response message; populated only after a periodic-feedback request
-    /// is enabled or after `sendArmParamEnquiryAndConfig(EndVelAcc)` is called.
+    /// is enabled or after `sendArmParamEnquiryAndConfig(EndVelAcc)` is called. Because it can
+    /// be streamed, it keeps the 1 s health timeout; after a one-shot enquiry rely on `is_valid`.
     StateSnapshot<ArmMsgCurrentEndVelAccParam> getArmCurrentEndVelAcc() const
     {
         return StateSnapshot(arm_current_end_vel_acc_);
@@ -672,6 +676,8 @@ private:
     mutable std::mutex ctrl_151_tx_mutex_;
     ArmMsgMotionCtrl_2 ctrl_151_tx_;
     bool sendCommandedMotionCtrlLocked();
+
+    void resetStates();
 
     void updateFeedbackFK();
 

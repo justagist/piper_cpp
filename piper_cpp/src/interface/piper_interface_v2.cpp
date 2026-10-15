@@ -40,6 +40,19 @@ PiperInterfaceV2::PiperInterfaceV2(
     arm_motion_ctrl_code_151_.setNumCallers(1);
     arm_instruction_response_.setNumCallers(1);
 
+    // Query responses and command echoes arrive once, not periodically, so their age says
+    // nothing about the link; only the periodic feedback streams keep the default timeout.
+    arm_crash_protection_rating_fb_.setHealthTimeout(kNoHealthTimeout);
+    arm_gripper_teaching_pendant_fb_.setHealthTimeout(kNoHealthTimeout);
+    arm_current_motor_angle_limit_max_spd_.setHealthTimeout(kNoHealthTimeout);
+    arm_current_motor_max_acc_limit_.setHealthTimeout(kNoHealthTimeout);
+    arm_all_motor_angle_limit_max_spd_.setHealthTimeout(kNoHealthTimeout);
+    arm_all_motor_max_acc_limit_.setHealthTimeout(kNoHealthTimeout);
+    arm_joint_ctrl_msgs_.setHealthTimeout(kNoHealthTimeout);
+    arm_gripper_ctrl_.setHealthTimeout(kNoHealthTimeout);
+    arm_motion_ctrl_code_151_.setHealthTimeout(kNoHealthTimeout);
+    arm_instruction_response_.setHealthTimeout(kNoHealthTimeout);
+
     /// TODO: initialise other members as in python
 }
 
@@ -116,7 +129,33 @@ void PiperInterfaceV2::disconnectPort(std::chrono::milliseconds timeout)
         read_thread_.join();
     }
     arm_can_->close();
+    resetStates();
     connected_.store(false, std::memory_order_relaxed);
+}
+
+void PiperInterfaceV2::resetStates()
+{
+    // Called with the read thread stopped, so nothing races these.
+    arm_status_.reset();
+    arm_end_pose_.reset();
+    arm_joint_states_.reset();
+    arm_gripper_msgs_.reset();
+    arm_high_spd_fb_.reset();
+    arm_low_spd_fb_.reset();
+    arm_current_end_vel_acc_.reset();
+    arm_crash_protection_rating_fb_.reset();
+    arm_gripper_teaching_pendant_fb_.reset();
+    arm_current_motor_angle_limit_max_spd_.reset();
+    arm_current_motor_max_acc_limit_.reset();
+    arm_all_motor_angle_limit_max_spd_.reset();
+    arm_all_motor_max_acc_limit_.reset();
+    arm_joint_ctrl_msgs_.reset();
+    arm_gripper_ctrl_.reset();
+    arm_motion_ctrl_code_151_.reset();
+    arm_instruction_response_.reset();
+    arm_health_.reset();
+    std::lock_guard<std::mutex> lk(firmware_data_mutex_);
+    firmware_data_.clear();
 }
 
 void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double timestamp)
