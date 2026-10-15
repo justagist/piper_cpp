@@ -61,3 +61,13 @@ TEST(PiperParserV2, RejectsPayloadShorterThanTheFieldsRead)
     ASSERT_TRUE(parser.decodeMessage(frame(0x4AF, {'S', '-', 'V'}), 0.0, msg));
     EXPECT_EQ(msg.firmware_data, (std::vector<uint8_t>{'S', '-', 'V'}));
 }
+
+TEST(PiperParserV2, MotorCurrentIsSigned)
+{
+    PiperParserV2 parser;
+    PiperMessage msg;
+    // Joint 1 high-speed feedback: speed 0, current -100 mA (0xFF9C), position 0.
+    ASSERT_TRUE(parser.decodeMessage(frame(0x251, {0, 0, 0xFF, 0x9C, 0, 0, 0, 0}), 0.0, msg));
+    EXPECT_EQ(msg.high_spd_feedbacks[0].current, -100);
+    EXPECT_LT(msg.high_spd_feedbacks[0].effort, 0.0f) << "derived torque must keep the sign of the current";
+}
