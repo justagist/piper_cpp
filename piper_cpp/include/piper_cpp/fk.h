@@ -44,8 +44,9 @@ public:
     }
 
     /// Compute forward kinematics for the supplied joint angles (radians). Returns the
-    /// cumulative pose of each link as `[x, y, z, roll, pitch, yaw]` (mm + radians) in the
-    /// base frame. The last entry is the end-effector pose.
+    /// cumulative pose of each link as `[x, y, z, roll, pitch, yaw]` in the base frame, with
+    /// positions in mm and angles in degrees (the convention of the manufacturer's SDK, whose
+    /// home pose is `init_pos`). The last entry is the end-effector pose.
     std::vector<std::array<double, 6>> calcFK(const JointVec& cur_j) const
     {
         std::array<Mat4, 6> Ts;

@@ -82,6 +82,18 @@ static bool renameInterface(const std::string& old_name, const std::string& new_
     return ok;
 }
 
+// A parking name for an adapter awaiting its final name: short enough for IFNAMSIZ with any
+// prefix, not currently in use, and never one of the final names.
+static std::string freeTemporaryName(const std::vector<std::string>& targets)
+{
+    for (int n = 0;; ++n)
+    {
+        const std::string tmp = "cantmp" + std::to_string(n);
+        if (if_nametoindex(tmp.c_str()) == 0 && std::find(targets.begin(), targets.end(), tmp) == targets.end())
+            return tmp;
+    }
+}
+
 std::vector<PortPair> findPorts() { return getCanInterfacesInternal(); }
 
 std::vector<std::string> activePorts()
@@ -113,25 +125,46 @@ void activate(const std::vector<PortPair>& ports, const std::string& prefix, int
             throw std::runtime_error("Timed out waiting for CAN devices");
     }
     std::sort(list.begin(), list.end(), [](auto& a, auto& b) { return a.second < b.second; });
+
+    // The kernel only renames an interface that is down, and the requested names may already
+    // be taken by the wrong adapters (two adapters swapping names), so: stop everything, park
+    // each adapter that needs renaming under a temporary name, then give out the final names
+    // and bring the interfaces up.
+    std::vector<std::string> targets;
+    for (size_t i = 0; i < list.size(); ++i)
+        targets.push_back(prefix + std::to_string(i));
+    std::vector<std::string> current;
     for (size_t i = 0; i < list.size(); ++i)
     {
         const std::string iface = list[i].first;
-        const std::string target = prefix + std::to_string(i);
-        // stop interface
         if (can_do_stop(iface.c_str()) < 0)
             throw std::runtime_error("Failed to stop interface " + iface);
-        // set bitrate
-        if (can_set_bitrate(iface.c_str(), static_cast<unsigned int>(bitrate)) < 0)
-            throw std::runtime_error("Failed to set bitrate on " + iface);
-        // start interface
-        if (can_do_start(iface.c_str()) < 0)
-            throw std::runtime_error("Failed to start interface " + iface);
-        // rename if necessary
-        if (target != iface)
+        std::string name = iface;
+        if (iface != targets[i])
         {
-            if (!renameInterface(iface, target))
-                std::cerr << "[WARN] rename " << iface << "->" << target << " failed";
+            const std::string tmp = freeTemporaryName(targets);
+            if (!renameInterface(iface, tmp))
+                std::cerr << "[WARN] rename " << iface << "->" << tmp << " failed";
+            else
+                name = tmp;
         }
+        current.push_back(name);
+    }
+    for (size_t i = 0; i < list.size(); ++i)
+    {
+        std::string name = current[i];
+        const std::string& target = targets[i];
+        if (name != target)
+        {
+            if (!renameInterface(name, target))
+                std::cerr << "[WARN] rename " << name << "->" << target << " failed";
+            else
+                name = target;
+        }
+        if (can_set_bitrate(name.c_str(), static_cast<unsigned int>(bitrate)) < 0)
+            throw std::runtime_error("Failed to set bitrate on " + name);
+        if (can_do_start(name.c_str()) < 0)
+            throw std::runtime_error("Failed to start interface " + name);
     }
 }
 
