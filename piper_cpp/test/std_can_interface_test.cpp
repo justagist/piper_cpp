@@ -115,3 +115,11 @@ TEST(StdCanInterface, DeliversEveryFrameInOrder)
     for (uint32_t id = 0; id < kFrames; ++id)
         ASSERT_EQ(received[id], id) << "frame " << id << " arrived out of order";
 }
+
+TEST(StdCanInterface, InitFailureCanBeRetried)
+{
+    // No such interface, so init() fails at the ifindex lookup. Before the fix the half-open
+    // socket was kept and a second init() reported success.
+    StdCanInterface can("piper_cpp_no_such_iface", 1000000, /*judge_flag=*/false, /*auto_init=*/true);
+    EXPECT_FALSE(can.init());
+}

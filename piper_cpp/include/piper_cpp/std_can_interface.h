@@ -59,37 +59,42 @@ public:
         ::close(wake_fd_);
     }
 
+    /// Open and bind the raw CAN socket. On failure nothing is kept, so a later call retries
+    /// from scratch instead of reporting an unbound socket as open.
     bool init()
     {
         if (sock_ != -1)
             return true;
-        sock_ = socket(PF_CAN, SOCK_RAW, CAN_RAW);
-        if (sock_ < 0)
+        int fd = socket(PF_CAN, SOCK_RAW, CAN_RAW);
+        if (fd < 0)
         {
             perror("socket");
             return false;
         }
 
         int enable = 1;
-        if (setsockopt(sock_, SOL_SOCKET, SO_TIMESTAMP, &enable, sizeof(enable)) < 0)
+        if (setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, &enable, sizeof(enable)) < 0)
             perror("setsockopt SO_TIMESTAMP");
 
         struct ifreq ifr;
         strncpy(ifr.ifr_name, channel_name_.c_str(), IFNAMSIZ);
-        if (ioctl(sock_, SIOCGIFINDEX, &ifr) < 0)
+        if (ioctl(fd, SIOCGIFINDEX, &ifr) < 0)
         {
             perror("ioctl");
+            ::close(fd);
             return false;
         }
 
         addr_.can_family = AF_CAN;
         addr_.can_ifindex = ifr.ifr_ifindex;
-        if (bind(sock_, (struct sockaddr*)&addr_, sizeof(addr_)) < 0)
+        if (bind(fd, (struct sockaddr*)&addr_, sizeof(addr_)) < 0)
         {
             perror("bind");
+            ::close(fd);
             return false;
         }
         drainWake(); // an interrupt left over from a previous session must not cancel the first read
+        sock_ = fd;
         return true;
     }
 
