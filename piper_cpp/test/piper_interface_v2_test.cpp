@@ -142,9 +142,11 @@ TEST(PiperInterfaceV2, AllMotorAngleLimitsValidOnlyAfterEveryMotorReplies)
     ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
     const auto deadline = steady_clock::now() + 5s;
 
-    // Out-of-range motor indices must be ignored (index 0 used to write motor[-1]).
+    // Out-of-range motor indices must be ignored by both states (index 0 used to write motor[-1]).
     sendFrame(bus.peer, angleLimitReply(0, 999), deadline);
     sendFrame(bus.peer, angleLimitReply(7, 999), deadline);
+    std::this_thread::sleep_for(50ms);
+    EXPECT_FALSE(bus.piper->getArmCurrentMotorAngleLimitMaxSpd().is_valid);
     for (uint8_t motor = 1; motor <= 5; ++motor)
         sendFrame(bus.peer, angleLimitReply(motor, motor * 100), deadline);
     ASSERT_TRUE(waitFor([&] { return bus.piper->getArmCurrentMotorAngleLimitMaxSpd().value.motor_num == 5; }));
@@ -168,6 +170,8 @@ TEST(PiperInterfaceV2, AllMotorAccLimitsValidOnlyAfterEveryMotorReplies)
 
     sendFrame(bus.peer, frame(0x47C, {0, 0, 9}), deadline);
     sendFrame(bus.peer, frame(0x47C, {7, 0, 9}), deadline);
+    std::this_thread::sleep_for(50ms);
+    EXPECT_FALSE(bus.piper->getArmCurrentMotorMaxAccLimit().is_valid);
     for (uint8_t motor = 1; motor <= 5; ++motor)
         sendFrame(bus.peer, frame(0x47C, {motor, 0, motor}), deadline);
     ASSERT_TRUE(waitFor([&] { return bus.piper->getArmCurrentMotorMaxAccLimit().value.joint_motor_num == 5; }));

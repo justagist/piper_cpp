@@ -288,9 +288,6 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
         }
         case ArmMsgType::FeedbackCurrentMotorAngleLimitMaxSpd:
         {
-            arm_current_motor_angle_limit_max_spd_.set(
-                msg.arm_feedback_current_motor_angle_limit_max_spd, msg.timestamp
-            );
             // all_motor_angle_limit_max_spd.motor[];
             if (msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num < 1 ||
                 msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num > 6)
@@ -301,6 +298,9 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
             }
             else
             {
+                arm_current_motor_angle_limit_max_spd_.set(
+                    msg.arm_feedback_current_motor_angle_limit_max_spd, msg.timestamp
+                );
                 auto all_motor_angle_limit_max_spd = arm_all_motor_angle_limit_max_spd_.getValue();
                 all_motor_angle_limit_max_spd.motor[msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num - 1] =
                     msg.arm_feedback_current_motor_angle_limit_max_spd;
@@ -313,7 +313,6 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
         }
         case ArmMsgType::FeedbackCurrentMotorMaxAccLimit:
         {
-            arm_current_motor_max_acc_limit_.set(msg.arm_feedback_current_motor_max_acc_limit, msg.timestamp);
             if (msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num < 1 ||
                 msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num > 6)
             {
@@ -322,6 +321,7 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
             }
             else
             {
+                arm_current_motor_max_acc_limit_.set(msg.arm_feedback_current_motor_max_acc_limit, msg.timestamp);
                 auto all_motor_max_acc_limit = arm_all_motor_max_acc_limit_.getValue();
                 all_motor_max_acc_limit.motor[msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num - 1] =
                     msg.arm_feedback_current_motor_max_acc_limit;
