@@ -87,9 +87,10 @@ public:
     /// want to re-discover its limits.
     void piperInit();
 
-    /// Block until every motor has answered both limit queries, re-sending the queries every
-    /// `retry_interval` so a lost frame does not leave the aggregates invalid for the session.
-    /// Requires the read thread to be running. Returns false if `timeout` passes first.
+    /// Discard the cached limits, then block until every motor has answered both limit queries,
+    /// re-sending them every `retry_interval` so a lost frame does not leave the aggregates
+    /// invalid. Requires the read thread to be running. Returns false if the first send fails
+    /// or `timeout` passes first.
     bool waitForMotorLimits(
         std::chrono::milliseconds timeout = std::chrono::milliseconds{2000},
         std::chrono::milliseconds retry_interval = std::chrono::milliseconds{200}

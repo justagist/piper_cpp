@@ -936,8 +936,12 @@ bool PiperInterfaceV2::waitForMotorLimits(std::chrono::milliseconds timeout, std
 {
     using clock = std::chrono::steady_clock;
     const auto deadline = clock::now() + timeout;
+    // Success must mean replies to these queries, not whatever an earlier session cached.
+    arm_all_motor_angle_limit_max_spd_.reset();
+    arm_all_motor_max_acc_limit_.reset();
     auto last_sent = clock::now();
-    searchAllMotorLimits();
+    if (!searchAllMotorLimits())
+        return false; // not connected or the bus is down: waiting cannot help
     while (!(arm_all_motor_angle_limit_max_spd_.isValid() && arm_all_motor_max_acc_limit_.isValid()))
     {
         if (clock::now() >= deadline)

@@ -345,22 +345,24 @@ TEST(PiperInterfaceV2, WaitForMotorLimitsRetriesLostReplies)
 {
     auto bus = makeBus();
     ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
+    // The very last reply of the round goes missing once, so the angle aggregate is complete a
+    // whole retry round before the acc aggregate: waiting for only one of them would return
+    // with the other still invalid.
     LimitResponder arm(
         bus.peer,
         {
-            {3, 1},
-            {5, 2}
+            {6, 2}
     }
-    ); // motor 3's angle reply and motor 5's acc reply get lost once
+    );
 
     EXPECT_TRUE(bus.piper->waitForMotorLimits(2s, 50ms));
-    EXPECT_GE(arm.rounds.load(), 2) << "the missing replies can only arrive after a re-query";
+    EXPECT_GE(arm.rounds.load(), 2) << "the missing reply can only arrive after a re-query";
     const auto angles = bus.piper->getArmAllMotorAngleLimitMaxSpd();
     const auto accs = bus.piper->getArmAllMotorMaxAccLimit();
     ASSERT_TRUE(angles.is_valid);
     ASSERT_TRUE(accs.is_valid);
     EXPECT_EQ(angles.value.motor[2].max_angle_limit, 3);
-    EXPECT_EQ(accs.value.motor[4].max_joint_acc, 5);
+    EXPECT_EQ(accs.value.motor[5].max_joint_acc, 6);
 }
 
 TEST(PiperInterfaceV2, WaitForMotorLimitsGivesUpAtTheTimeout)
@@ -371,6 +373,8 @@ TEST(PiperInterfaceV2, WaitForMotorLimitsGivesUpAtTheTimeout)
     // so the sends never block.
     const auto t0 = steady_clock::now();
     EXPECT_FALSE(bus.piper->waitForMotorLimits(300ms, 50ms));
-    EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(steady_clock::now() - t0).count(), 1000);
+    const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(steady_clock::now() - t0).count();
+    EXPECT_GE(waited, 300) << "gave up before the timeout";
+    EXPECT_LT(waited, 1000);
     EXPECT_FALSE(bus.piper->getArmAllMotorAngleLimitMaxSpd().is_valid);
 }
