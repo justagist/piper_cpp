@@ -71,3 +71,17 @@ TEST(PiperParserV2, MotorCurrentIsSigned)
     EXPECT_EQ(msg.high_spd_feedbacks[0].current, -100);
     EXPECT_LT(msg.high_spd_feedbacks[0].effort, 0.0f) << "derived torque must keep the sign of the current";
 }
+
+TEST(PiperParserV2, EncoderDerivesIdAndDlcFromType)
+{
+    PiperParserV2 parser;
+    PiperMessage msg;
+    msg.type = ArmMsgType::JointCtrl12;
+    msg.arm_joint_ctrl.joint_1 = 1000;
+
+    can_frame tx{};
+    ASSERT_TRUE(parser.encodeMessage(msg, tx));
+    EXPECT_EQ(tx.can_id, 0x155u);
+    EXPECT_EQ(tx.can_dlc, 8);
+    EXPECT_EQ(tx.data[3], 0xE8); // 1000 = 0x000003E8, big-endian
+}

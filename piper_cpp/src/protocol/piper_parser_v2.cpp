@@ -342,9 +342,6 @@ bool PiperParserV2::encodeMessage(const PiperMessage &msg, struct can_frame &tx_
     bool ret = true;
     memset(tx_frame.data, 0, 8);
 
-    // Always set CAN ID based on type for robustness
-    tx_frame.can_id = msg.can_id;
-
     switch (msg.type)
     {
     // --- Motion Ctrl 1 ---
@@ -534,6 +531,13 @@ bool PiperParserV2::encodeMessage(const PiperMessage &msg, struct can_frame &tx_
         break;
     }
 
+    if (ret)
+    {
+        // Every Piper command is an 8-byte standard frame whose ID follows from the type, so
+        // callers only fill in the payload fields.
+        tx_frame.can_id = static_cast<canid_t>(msgTypeToCanId(msg.type));
+        tx_frame.can_dlc = 8;
+    }
     return ret;
 }
 

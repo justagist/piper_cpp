@@ -459,11 +459,8 @@ bool PiperInterfaceV2::sendPiperMsg(const PiperMessage &msg)
         std::cerr << "Error: Failed to encode Piper message.\n";
         return false;
     }
-    std::vector<uint8_t> data(tx.data, tx.data + PiperMessage::raw_data_len);
-
-    auto can_id = static_cast<uint16_t>(msgTypeToCanId(msg.type));
-
-    if (!arm_can_->sendCanMessage(can_id, data))
+    std::vector<uint8_t> data(tx.data, tx.data + tx.can_dlc);
+    if (!arm_can_->sendCanMessage(tx.can_id, data))
     {
         std::cerr << "Error: Failed to send CAN message.\n";
         return false;
