@@ -130,8 +130,8 @@ void PiperInterfaceV2::disconnectPort(std::chrono::milliseconds timeout)
         read_thread_.join();
     }
     arm_can_->close();
-    connected_.store(false, std::memory_order_relaxed);
     resetStates();
+    connected_.store(false, std::memory_order_relaxed);
 }
 
 void PiperInterfaceV2::resetStates()
@@ -155,6 +155,8 @@ void PiperInterfaceV2::resetStates()
     arm_motion_ctrl_code_151_.reset();
     arm_instruction_response_.reset();
     arm_health_.reset();
+    std::lock_guard<std::mutex> lk(firmware_data_mutex_);
+    firmware_data_.clear();
 }
 
 void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double timestamp)
