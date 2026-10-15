@@ -221,18 +221,26 @@ TEST(PiperInterfaceV2, ConcurrentJointCommandsDoNotInterleave)
     std::thread a(sender, 1000);
     std::thread b(sender, 2000);
 
+    // Receive failures are recorded rather than asserted here so the senders are always
+    // joined; a quiet bus means they have finished, so the joins cannot hang.
+    constexpr size_t kExpectedFrames = 2 * kCallsPerThread * 3;
     std::vector<can_frame> frames;
-    frames.reserve(2 * kCallsPerThread * 3);
-    while (frames.size() < frames.capacity())
+    frames.reserve(kExpectedFrames);
+    bool received_all = true;
+    while (frames.size() < kExpectedFrames)
     {
         pollfd pfd{bus.peer, POLLIN, 0};
-        ASSERT_GT(poll(&pfd, 1, 2000), 0) << "bus went quiet after " << frames.size() << " frames";
         can_frame f{};
-        ASSERT_EQ(::recv(bus.peer, &f, sizeof(f), 0), static_cast<ssize_t>(sizeof(f)));
+        if (poll(&pfd, 1, 2000) <= 0 || ::recv(bus.peer, &f, sizeof(f), 0) != static_cast<ssize_t>(sizeof(f)))
+        {
+            received_all = false;
+            break;
+        }
         frames.push_back(f);
     }
     a.join();
     b.join();
+    ASSERT_TRUE(received_all) << "bus went quiet after " << frames.size() << " frames";
 
     auto firstJoint = [](const can_frame& f)
     { return static_cast<int32_t>((f.data[0] << 24) | (f.data[1] << 16) | (f.data[2] << 8) | f.data[3]); };
