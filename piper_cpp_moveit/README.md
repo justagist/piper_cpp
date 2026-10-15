@@ -94,4 +94,4 @@ they're what selects the URDF, SRDF, and controllers config.
 
 ## License
 
-MIT -- see [../piper_cpp/LICENSE](../piper_cpp/LICENSE).
+MIT -- see [../LICENSE](../LICENSE).

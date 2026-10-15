@@ -16,4 +16,4 @@ alone or, with `with_gripper:=true`, on the arm + gripper together.
 
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+MIT -- see [LICENSE](LICENSE).
