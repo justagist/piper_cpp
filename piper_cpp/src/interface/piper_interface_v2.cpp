@@ -439,8 +439,11 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
         }
         case ArmMsgType::FirmwareRead:
         {
+            // The reply to one query is a few frames; anything beyond this is noise, not the tag.
+            static constexpr size_t kMaxFirmwareBytes = 256;
             std::lock_guard<std::mutex> lock(firmware_data_mutex_);
-            firmware_data_.insert(firmware_data_.end(), msg.firmware_data.begin(), msg.firmware_data.end());
+            if (firmware_data_.size() < kMaxFirmwareBytes)
+                firmware_data_.insert(firmware_data_.end(), msg.firmware_data.begin(), msg.firmware_data.end());
             break;
         }
         case ArmMsgType::InstructionResponseConfig:
@@ -940,6 +943,12 @@ bool PiperInterfaceV2::sendFirmwareQuery()
     std::vector<uint8_t> data{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     uint16_t can_id = 0x4AF;
 
+    {
+        // Each query gets its own reply buffer, so a re-query after a firmware update cannot
+        // keep reporting the old tag.
+        std::lock_guard<std::mutex> lock(firmware_data_mutex_);
+        firmware_data_.clear();
+    }
     if (!arm_can_->sendCanMessage(can_id, data))
     {
         std::cerr << "Error: Failed to send firmware query CAN message.\n";
@@ -966,8 +975,10 @@ std::optional<std::string> PiperInterfaceV2::getFirmwareVersion() const
     {
         if (std::memcmp(firmware_data_.data() + i, marker, marker_len) == 0)
         {
-            const size_t end = std::min(i + version_len, firmware_data_.size());
-            return std::string(firmware_data_.begin() + i, firmware_data_.begin() + end);
+            // The tag spans frames; report it only once it is all here.
+            if (i + version_len > firmware_data_.size())
+                return std::nullopt;
+            return std::string(firmware_data_.begin() + i, firmware_data_.begin() + i + version_len);
         }
     }
     return std::nullopt;

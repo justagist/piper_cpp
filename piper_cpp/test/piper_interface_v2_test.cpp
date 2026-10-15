@@ -254,3 +254,27 @@ TEST(PiperInterfaceV2, ConcurrentJointCommandsDoNotInterleave)
         ASSERT_EQ(firstJoint(frames[i + 2]), target) << "triple " << i / 3 << " mixes two callers";
     }
 }
+
+TEST(PiperInterfaceV2, FirmwareVersionNeedsTheWholeTagAndRestartsPerQuery)
+{
+    auto bus = makeBus();
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
+    const auto deadline = steady_clock::now() + 5s;
+    auto firmwareBytes = [&](size_t n) { return bus.piper->getFirmwareData().size() == n; };
+
+    ASSERT_TRUE(bus.piper->requestFirmwareVersion());
+    sendFrame(bus.peer, frame(0x4AF, {'S', '-', 'V', '1'}), deadline);
+    ASSERT_TRUE(waitFor([&] { return firmwareBytes(4); }));
+    EXPECT_FALSE(bus.piper->getFirmwareVersion()) << "half a tag is not a version";
+
+    sendFrame(bus.peer, frame(0x4AF, {'.', '7', '-', '4'}), deadline);
+    ASSERT_TRUE(waitFor([&] { return firmwareBytes(8); }));
+    EXPECT_EQ(bus.piper->getFirmwareVersion(), "S-V1.7-4");
+
+    // A new query must not keep answering with the previous reply.
+    ASSERT_TRUE(bus.piper->requestFirmwareVersion());
+    EXPECT_FALSE(bus.piper->getFirmwareVersion());
+    sendFrame(bus.peer, frame(0x4AF, {'S', '-', 'V', '2', '.', '0', '-', '1'}), deadline);
+    ASSERT_TRUE(waitFor([&] { return firmwareBytes(8); }));
+    EXPECT_EQ(bus.piper->getFirmwareVersion(), "S-V2.0-1");
+}

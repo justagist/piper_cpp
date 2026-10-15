@@ -220,10 +220,11 @@ public:
     /// Parsed firmware-version string. Looks for the `"S-V"` marker in the streamed firmware
     /// data and returns the 8-byte tag that follows it, e.g. `"S-V1.7-4"`.
     ///
-    /// Returns an empty optional if the marker hasn't been received yet (e.g. you've called
+    /// Returns an empty optional until the whole tag has been received (e.g. you've called
     /// this within the first ~100 ms of `connectPort` and the bytes haven't arrived). If you
     /// need to re-query (after a firmware-update on the arm, say), call
-    /// `requestFirmwareVersion()` and read this again a moment later.
+    /// `requestFirmwareVersion()`, which discards the previous reply, and read this again a
+    /// moment later.
     std::optional<std::string> getFirmwareVersion() const;
 
     /// Re-send the firmware-version query (CAN ID `0x4AF`). The reply trickles in over the next
