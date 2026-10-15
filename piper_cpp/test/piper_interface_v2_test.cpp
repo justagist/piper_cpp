@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <csignal>
 #include <future>
@@ -14,6 +15,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using namespace std::chrono_literals;
@@ -286,4 +288,93 @@ TEST(PiperInterfaceV2, FirmwareVersionNeedsTheWholeTagAndRestartsPerQuery)
     sendFrame(bus.peer, frame(0x4AF, {'S', '-', 'V', '2', '.', '0', '-', '1'}), deadline);
     ASSERT_TRUE(waitFor([&] { return firmwareBytes(8); }));
     EXPECT_EQ(bus.piper->getFirmwareVersion(), "S-V2.0-1");
+}
+
+namespace
+{
+
+// Plays the arm's side of the limit queries on the peer end: every 0x472 gets its 0x473 or
+// 0x47C reply, except those listed in `drop_once`, which go unanswered the first time.
+struct LimitResponder
+{
+    int peer;
+    std::vector<std::pair<uint8_t, uint8_t>> drop_once; // {motor, search_content}
+    std::atomic<bool> stop{false};
+    std::atomic<int> rounds{0}; // counted by motor 1's angle query
+    std::thread thread;
+
+    LimitResponder(int peer_fd, std::vector<std::pair<uint8_t, uint8_t>> drop)
+        : peer(peer_fd), drop_once(std::move(drop)), thread([this] { run(); })
+    {
+    }
+    ~LimitResponder()
+    {
+        stop = true;
+        thread.join();
+    }
+
+    void run()
+    {
+        while (!stop)
+        {
+            pollfd pfd{peer, POLLIN, 0};
+            if (poll(&pfd, 1, 20) <= 0)
+                continue;
+            can_frame q{};
+            if (::recv(peer, &q, sizeof(q), 0) != static_cast<ssize_t>(sizeof(q)) || q.can_id != 0x472)
+                continue;
+            const uint8_t motor = q.data[0], content = q.data[1];
+            if (motor == 1 && content == 1)
+                ++rounds;
+            auto it = std::find(drop_once.begin(), drop_once.end(), std::make_pair(motor, content));
+            if (it != drop_once.end())
+            {
+                drop_once.erase(it);
+                continue;
+            }
+            const auto reply =
+                content == 1 ? frame(0x473, {motor, 0, motor, 0, 0, 0, 0}) : frame(0x47C, {motor, 0, motor});
+            ::send(peer, &reply, sizeof(reply), 0);
+        }
+    }
+};
+
+} // namespace
+
+TEST(PiperInterfaceV2, WaitForMotorLimitsRetriesLostReplies)
+{
+    auto bus = makeBus();
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
+    // The very last reply of the round goes missing once, so the angle aggregate is complete a
+    // whole retry round before the acc aggregate: waiting for only one of them would return
+    // with the other still invalid.
+    LimitResponder arm(
+        bus.peer,
+        {
+            {6, 2}
+    }
+    );
+
+    EXPECT_TRUE(bus.piper->waitForMotorLimits(2s, 50ms));
+    EXPECT_GE(arm.rounds.load(), 2) << "the missing reply can only arrive after a re-query";
+    const auto angles = bus.piper->getArmAllMotorAngleLimitMaxSpd();
+    const auto accs = bus.piper->getArmAllMotorMaxAccLimit();
+    ASSERT_TRUE(angles.is_valid);
+    ASSERT_TRUE(accs.is_valid);
+    EXPECT_EQ(angles.value.motor[2].max_angle_limit, 3);
+    EXPECT_EQ(accs.value.motor[5].max_joint_acc, 6);
+}
+
+TEST(PiperInterfaceV2, WaitForMotorLimitsGivesUpAtTheTimeout)
+{
+    auto bus = makeBus();
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
+    // Nobody answers. The few dozen queries sent before the timeout fit in the socket buffer,
+    // so the sends never block.
+    const auto t0 = steady_clock::now();
+    EXPECT_FALSE(bus.piper->waitForMotorLimits(300ms, 50ms));
+    const auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(steady_clock::now() - t0).count();
+    EXPECT_GE(waited, 300) << "gave up before the timeout";
+    EXPECT_LT(waited, 1000);
+    EXPECT_FALSE(bus.piper->getArmAllMotorAngleLimitMaxSpd().is_valid);
 }
