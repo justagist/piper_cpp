@@ -10,17 +10,23 @@ response_adapters:
   - default_planning_response_adapters/ValidateSolution
   - default_planning_response_adapters/DisplayMotionPath
 
+# Planner definitions live at the top level; each group lists the ones it may use by name.
+planner_configs:
+  RRTConnect:
+    type: geometric::RRTConnect
+    range: 0.0
+  RRTstar:
+    type: geometric::RRTstar
+    range: 0.0
+    goal_bias: 0.05
+  PRMstar:
+    type: geometric::PRMstar
+
 manipulator:
   planner_configs:
-    RRTConnect:
-      type: geometric::RRTConnect
-      range: 0.0
-    RRTstar:
-      type: geometric::RRTstar
-      range: 0.0
-      goal_bias: 0.05
-    PRMstar:
-      type: geometric::PRMstar
+    - RRTConnect
+    - RRTstar
+    - PRMstar
   default_planner_config: RRTConnect
   projection_evaluator: joints(joint1,joint2)
   longest_valid_segment_fraction: 0.005
