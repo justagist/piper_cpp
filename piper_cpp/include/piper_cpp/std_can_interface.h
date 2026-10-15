@@ -32,11 +32,13 @@ public:
         std::string channel_name = "can0", int expected_bitrate = 1000000, bool judge_flag = true,
         bool auto_init = true, CanCallback callback = nullptr
     )
-        : channel_name_(std::move(channel_name)), expected_bitrate_(expected_bitrate), sock_(-1),
-          wake_fd_(makeWakeFd()), callback_(std::move(callback))
+        : channel_name_(std::move(channel_name)), expected_bitrate_(expected_bitrate), sock_(-1), wake_fd_(-1),
+          callback_(std::move(callback))
     {
+        // Validate before creating the eventfd: a throwing constructor runs no destructor.
         if (judge_flag)
             judgeCanInfo();
+        wake_fd_ = makeWakeFd();
         if (auto_init)
             init();
     }
