@@ -1,5 +1,9 @@
 # piper_cpp
 
+[![ci](https://github.com/justagist/piper_cpp/actions/workflows/ci.yml/badge.svg)](https://github.com/justagist/piper_cpp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)](CMakeLists.txt)
+
 C++ SDK for the AgileX Piper 6-DOF arm with gripper, communicating over SocketCAN. A close
 port of the official [`piper_sdk`](https://github.com/agilexrobotics/piper_sdk) Python package
 with the same control surface and message coverage, but with several improvements such as
