@@ -5,13 +5,18 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   # piper_cpp is a plain CMake library with no ROS dependency; build it the way the
   # README documents for non-ROS users.
   standalone:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -28,9 +33,10 @@ jobs:
     runs-on: ubuntu-24.04
     container: ros:jazzy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: src/piper_cpp
+          persist-credentials: false
       - name: Install dependencies
         # piper_cpp has no package.xml, so rosdep neither sees its libsocketcan dependency nor
         # recognises it as a source package when piper_cpp_ros depends on it.
