@@ -347,6 +347,21 @@ hardware_interface::CallbackReturn PiperHardware::on_deactivate(const rclcpp_lif
     return hardware_interface::CallbackReturn::SUCCESS;
 }
 
+hardware_interface::CallbackReturn PiperHardware::on_error(const rclcpp_lifecycle::State&)
+{
+    // Reached after read() or write() returned ERROR. Stop streaming and release the CAN port
+    // so a later configure starts a fresh session; the joint motors are left as they are, so
+    // the arm keeps holding its last target.
+    active_.store(false, std::memory_order_release);
+    if (piper_)
+    {
+        piper_->disconnectPort(std::chrono::milliseconds{200});
+        piper_.reset();
+    }
+    RCLCPP_ERROR(rclcpp::get_logger(kLogger), "Entered error state; CAN port closed, motors left enabled.");
+    return hardware_interface::CallbackReturn::SUCCESS;
+}
+
 hardware_interface::CallbackReturn PiperHardware::on_cleanup(const rclcpp_lifecycle::State&)
 {
     if (piper_)
