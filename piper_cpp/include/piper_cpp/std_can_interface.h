@@ -124,7 +124,9 @@ public:
     }
 
     /// Block until one frame arrives and hand it to the callback, or until `interruptRead()` is
-    /// called. Returns true only when a frame was delivered to the callback.
+    /// called. Returns true only when a frame was delivered to the callback: false after an
+    /// interrupt, for a datagram that is not a whole `can_frame` (dropped), and once the socket
+    /// has died (interface down, peer gone), after which `isOpen()` is false.
     bool readCanMessage()
     {
         if (sock_ < 0)
@@ -161,7 +163,18 @@ public:
         msg.msg_controllen = sizeof(ctrlmsg);
 
         ssize_t nbytes = recvmsg(sock_, &msg, 0);
-        if (nbytes < 0)
+        if (nbytes < 0 && (errno == EAGAIN || errno == EINTR))
+            return false;
+        if (nbytes <= 0)
+        {
+            // Error or EOF: the socket will report this on every poll, so close it rather than
+            // let callers spin on it.
+            if (nbytes < 0)
+                perror("recvmsg");
+            close();
+            return false;
+        }
+        if (nbytes != static_cast<ssize_t>(sizeof(frame)))
             return false;
 
         double timestamp = 0.0;
@@ -184,6 +197,8 @@ public:
         }
         return false;
     }
+
+    bool isOpen() const { return sock_ >= 0; }
 
     /// Wake a thread blocked in `readCanMessage()`, which then returns false. Safe to call from
     /// any thread. If no read is in progress, the next `readCanMessage()` returns false once.

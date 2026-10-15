@@ -29,7 +29,7 @@ struct Bus
 Bus makeBus()
 {
     int sv[2];
-    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, sv) != 0)
+    if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sv) != 0)
         throw std::runtime_error("socketpair failed");
     return {sv[1], std::make_unique<PiperInterfaceV2>(std::make_unique<StdCanInterface>(sv[0]))};
 }

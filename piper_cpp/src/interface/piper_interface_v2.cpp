@@ -93,9 +93,13 @@ void PiperInterfaceV2::readLoop()
 {
     // readCanMessage() blocks until a frame arrives or disconnectPort() interrupts it, so no
     // sleep is needed and queued frames are drained as fast as they are parsed.
-    while (!stop_read_.load(std::memory_order_relaxed))
+    while (!stop_read_.load(std::memory_order_relaxed) && arm_can_->isOpen())
     {
         arm_can_->readCanMessage();
+    }
+    if (!stop_read_.load(std::memory_order_relaxed))
+    {
+        std::cerr << "Error: CAN socket closed unexpectedly; read thread stopped.\n";
     }
 }
 

@@ -1,6 +1,7 @@
-// Exercises StdCanInterface over a socketpair instead of a CAN adapter: each datagram written
+// Exercises StdCanInterface over a socketpair instead of a CAN adapter: each record written
 // to the peer end arrives at the adopted end as one can_frame, which is exactly what a raw
-// CAN socket delivers.
+// CAN socket delivers. SOCK_SEQPACKET keeps record boundaries like a datagram socket and,
+// unlike SOCK_DGRAM, tells the survivor when the peer closes.
 
 #include "piper_cpp/std_can_interface.h"
 
@@ -22,7 +23,7 @@ namespace
 std::pair<int, int> makeSocketPair()
 {
     int sv[2];
-    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, sv) != 0)
+    if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sv) != 0)
         throw std::runtime_error("socketpair failed");
     return {sv[0], sv[1]};
 }
@@ -66,6 +67,37 @@ TEST(StdCanInterface, PendingInterruptCancelsOnlyTheNextRead)
     EXPECT_FALSE(can.readCanMessage());
     EXPECT_TRUE(can.readCanMessage());
     EXPECT_EQ(frames, 1);
+}
+
+TEST(StdCanInterface, ShortRecordIsDroppedWithoutClosing)
+{
+    auto [adopted, peer] = makeSocketPair();
+    RawFd peer_guard{peer};
+    int frames = 0;
+    StdCanInterface can(adopted, [&](const can_frame&, double) { ++frames; });
+
+    const uint8_t partial[5] = {};
+    ASSERT_EQ(::send(peer, partial, sizeof(partial), 0), 5);
+    EXPECT_FALSE(can.readCanMessage());
+    EXPECT_EQ(frames, 0);
+    EXPECT_TRUE(can.isOpen());
+
+    can_frame f{};
+    ASSERT_EQ(::send(peer, &f, sizeof(f), 0), static_cast<ssize_t>(sizeof(f)));
+    EXPECT_TRUE(can.readCanMessage());
+    EXPECT_EQ(frames, 1);
+}
+
+TEST(StdCanInterface, PeerCloseClosesSocketInsteadOfSpinning)
+{
+    auto [adopted, peer] = makeSocketPair();
+    int frames = 0;
+    StdCanInterface can(adopted, [&](const can_frame&, double) { ++frames; });
+
+    ::close(peer);
+    EXPECT_FALSE(can.readCanMessage());
+    EXPECT_FALSE(can.isOpen()) << "a dead socket must be closed, or every later read would return immediately";
+    EXPECT_EQ(frames, 0);
 }
 
 TEST(StdCanInterface, DeliversEveryFrameInOrder)
