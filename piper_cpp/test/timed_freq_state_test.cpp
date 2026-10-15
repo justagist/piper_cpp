@@ -22,14 +22,16 @@ struct Reading
 
 } // namespace
 
+// Timeouts are generous relative to the sleeps so a descheduled test thread cannot expire a
+// state before the "still healthy" assertions run.
 TEST(TimedFreqState, HealthExpiresAfterTheTimeout)
 {
     TimedFreqState<Reading> state;
-    state.setHealthTimeout(50ms);
+    state.setHealthTimeout(200ms);
     state.set(Reading{1}, 0.0);
     EXPECT_TRUE(state.isHealthy());
 
-    std::this_thread::sleep_for(80ms);
+    std::this_thread::sleep_for(400ms);
     EXPECT_FALSE(state.isHealthy()) << "no update for longer than the timeout";
     EXPECT_TRUE(state.isValid()) << "validity is about having received, not freshness";
 }
@@ -50,12 +52,12 @@ TEST(TimedFreqState, MultipartHealthNeedsEveryPartFresh)
 {
     TimedFreqState<Reading> state;
     state.setNumCallers(3);
-    state.setHealthTimeout(50ms);
+    state.setHealthTimeout(200ms);
     for (int part = 0; part < 3; ++part)
         state.set(Reading{part}, 0.0, part);
     ASSERT_TRUE(state.isHealthy());
 
-    std::this_thread::sleep_for(80ms);
+    std::this_thread::sleep_for(400ms);
     state.set(Reading{0}, 0.0, 0);
     EXPECT_FALSE(state.isHealthy()) << "one fresh part cannot hide two stale ones";
     state.set(Reading{1}, 0.0, 1);
@@ -77,15 +79,20 @@ TEST(TimedFreqState, SnapshotPairsValueWithItsOwnMetadata)
         }
     );
 
+    int valid = 0;
     int mismatches = 0;
     for (int i = 0; i < 20000; ++i)
     {
         const StateSnapshot<Reading> snap(state);
-        if (snap.is_valid && static_cast<double>(snap.value.n) != snap.timestamp)
+        if (!snap.is_valid)
+            continue;
+        ++valid;
+        if (static_cast<double>(snap.value.n) != snap.timestamp)
             ++mismatches;
     }
     stop.store(true);
     writer.join();
+    EXPECT_GT(valid, 0) << "the check needs snapshots that saw the writer";
     EXPECT_EQ(mismatches, 0);
 }
 
