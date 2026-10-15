@@ -109,7 +109,9 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
         msg.type = ArmMsgType::Unknown;
         return false;
     }
-    std::copy(std::begin(rx_frame.data), std::end(rx_frame.data), std::begin(msg.raw_data));
+    // Only the received bytes are real; the rest of the buffer is whatever the frame carried.
+    std::copy(data, data + rx_frame.can_dlc, std::begin(msg.raw_data));
+    std::fill(std::begin(msg.raw_data) + rx_frame.can_dlc, std::end(msg.raw_data), 0);
     msg.timestamp = timestamp;
 
     // ----------------- Main switch -----------------

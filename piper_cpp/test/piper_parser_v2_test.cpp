@@ -68,9 +68,13 @@ TEST(PiperParserV2, RejectsPayloadShorterThanTheFieldsRead)
     EXPECT_FALSE(parser.decodeMessage(frame(0x2A8, {0, 0, 0, 1, 0, 0}), 0.0, msg));
     EXPECT_TRUE(parser.decodeMessage(frame(0x2A8, {0, 0, 0, 1, 0, 0, 0}), 0.0, msg));
 
-    // Firmware text arrives in chunks of any length; only the bytes on the bus are kept.
+    // Firmware text arrives in chunks of any length; only the bytes on the bus are kept, in
+    // both the typed field and the raw copy.
+    msg.raw_data[3] = 0xAA; // stale byte from a previous decode of the same message object
     ASSERT_TRUE(parser.decodeMessage(frame(0x4AF, {'S', '-', 'V'}), 0.0, msg));
     EXPECT_EQ(msg.firmware_data, (std::vector<uint8_t>{'S', '-', 'V'}));
+    EXPECT_EQ(msg.raw_data[2], 'V');
+    EXPECT_EQ(msg.raw_data[3], 0);
 }
 
 TEST(PiperParserV2, MotorCurrentIsSigned)
