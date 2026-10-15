@@ -10,6 +10,8 @@
 namespace piper_cpp
 {
 
+template <typename T> struct StateSnapshot;
+
 /// Pass to `TimedFreqState::setHealthTimeout()` for one-shot responses, which stay healthy
 /// once received.
 inline constexpr std::chrono::steady_clock::duration kNoHealthTimeout = std::chrono::steady_clock::duration::max();
@@ -97,6 +99,9 @@ public:
         return getHzLocked();
     }
 
+    /// Value and metadata taken under one lock, so they describe the same update.
+    StateSnapshot<T> snapshot() const;
+
 private:
     bool isValidLocked() const
     {
@@ -135,9 +140,10 @@ template <typename T> struct StateSnapshot
     bool is_valid;
     bool is_healthy;
 
-    StateSnapshot(const TimedFreqState<T>& state)
-        : value(state.getValue()), timestamp(state.getTimestamp()), hz(state.getHz()), is_valid(state.isValid()),
-          is_healthy(state.isHealthy())
+    StateSnapshot(const TimedFreqState<T>& state) : StateSnapshot(state.snapshot()) {}
+
+    StateSnapshot(T value_, double timestamp_, double hz_, bool is_valid_, bool is_healthy_)
+        : value(std::move(value_)), timestamp(timestamp_), hz(hz_), is_valid(is_valid_), is_healthy(is_healthy_)
     {
     }
 
@@ -149,5 +155,12 @@ template <typename T> struct StateSnapshot
         return oss.str();
     }
 };
+
+template <typename T> StateSnapshot<T> TimedFreqState<T>::snapshot() const
+{
+    std::lock_guard<std::mutex> lk(mutex_);
+    const auto now = clock::now();
+    return StateSnapshot<T>(value_, timestamp_, getHzLocked(), isValidLocked(), isHealthyLocked(now));
+}
 
 } // namespace piper_cpp

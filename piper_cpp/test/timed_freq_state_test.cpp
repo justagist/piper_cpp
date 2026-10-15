@@ -62,3 +62,29 @@ TEST(TimedFreqState, MultipartHealthNeedsEveryPartFresh)
     state.set(Reading{2}, 0.0, 2);
     EXPECT_TRUE(state.isHealthy());
 }
+
+TEST(TimedFreqState, SnapshotPairsValueWithItsOwnMetadata)
+{
+    // The writer keeps value and timestamp equal, so any snapshot where they differ mixed
+    // two updates. Separately locked getters did exactly that.
+    TimedFreqState<Reading> state;
+    std::atomic<bool> stop{false};
+    std::thread writer(
+        [&]
+        {
+            for (int n = 1; !stop.load(); ++n)
+                state.set(Reading{n}, static_cast<double>(n));
+        }
+    );
+
+    int mismatches = 0;
+    for (int i = 0; i < 20000; ++i)
+    {
+        const StateSnapshot<Reading> snap(state);
+        if (snap.is_valid && static_cast<double>(snap.value.n) != snap.timestamp)
+            ++mismatches;
+    }
+    stop.store(true);
+    writer.join();
+    EXPECT_EQ(mismatches, 0);
+}
