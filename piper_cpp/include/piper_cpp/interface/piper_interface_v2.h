@@ -46,7 +46,8 @@ public:
 
     /// Construct over an already-open transport, e.g. one adopting a socket the caller opened.
     /// Mainly for tests, which drive the interface through a socketpair instead of a CAN bus.
-    /// The remaining parameters are as above.
+    /// `can` must not be null and is single-use: once disconnected, `connectPort()` cannot
+    /// reopen it. The remaining parameters are as above.
     PiperInterfaceV2(
         std::unique_ptr<StdCanInterface> can, bool dh_offset = true, bool sdk_joint_limit = false,
         bool sdk_gripper_limit = false

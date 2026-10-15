@@ -44,11 +44,15 @@ public:
     }
 
     /// Adopt an already-open socket that delivers one `can_frame` per datagram (a raw CAN socket,
-    /// or a socketpair in tests). Takes ownership of `socket_fd`; `init()` is a no-op.
+    /// or a socketpair in tests). Takes ownership of `socket_fd`. The transport is single-use:
+    /// `init()` is a no-op while it is open and cannot reopen it after `close()`.
     explicit StdCanInterface(int socket_fd, CanCallback callback = nullptr)
         : channel_name_(), expected_bitrate_(0), sock_(socket_fd), wake_fd_(makeWakeFd()),
           callback_(std::move(callback))
     {
+        int enable = 1;
+        if (setsockopt(sock_, SOL_SOCKET, SO_TIMESTAMP, &enable, sizeof(enable)) < 0)
+            perror("setsockopt SO_TIMESTAMP");
     }
 
     // Owns file descriptors, so copying would double-close them.
