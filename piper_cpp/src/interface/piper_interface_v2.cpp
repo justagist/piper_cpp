@@ -668,6 +668,7 @@ bool PiperInterfaceV2::controlJoints(
         joint_1_millideg, joint_2_millideg, joint_3_millideg,
         joint_4_millideg, joint_5_millideg, joint_6_millideg,
     };
+    std::lock_guard<std::mutex> lock(multipart_tx_mutex_);
     msg.type = ArmMsgType::JointCtrl12;
     if (!sendPiperMsg(msg))
         return false;
@@ -682,6 +683,7 @@ bool PiperInterfaceV2::controlEndPose(int32_t x_um, int32_t y_um, int32_t z_um, 
 {
     PiperMessage msg;
     msg.arm_motion_ctrl_cartesian = ArmMsgEndPose{x_um, y_um, z_um, rx_md, ry_md, rz_md};
+    std::lock_guard<std::mutex> lock(multipart_tx_mutex_);
     msg.type = ArmMsgType::MotionCtrlCartesian1;
     if (!sendPiperMsg(msg))
         return false;

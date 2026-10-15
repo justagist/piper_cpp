@@ -10,8 +10,10 @@
 #include <future>
 #include <initializer_list>
 #include <memory>
+#include <poll.h>
 #include <sys/socket.h>
 #include <thread>
+#include <vector>
 
 using namespace std::chrono_literals;
 using piper_cpp::PiperInterfaceV2;
@@ -201,4 +203,46 @@ TEST(PiperInterfaceV2, DisconnectClearsCachedState)
     const auto js = bus.piper->getArmJointStates();
     EXPECT_FALSE(js.is_valid) << "feedback from a closed session must not look current";
     EXPECT_EQ(js.value.joint_6, 0);
+}
+
+TEST(PiperInterfaceV2, ConcurrentJointCommandsDoNotInterleave)
+{
+    // Each controlJoints() call is three frames (0x155, 0x156, 0x157). Two callers with
+    // different targets must still produce whole triples on the bus, never a mix.
+    constexpr int kCallsPerThread = 500;
+    auto bus = makeBus();
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/false));
+
+    auto sender = [&](int32_t value)
+    {
+        for (int i = 0; i < kCallsPerThread; ++i)
+            EXPECT_TRUE(bus.piper->controlJoints(value, value, value, value, value, value));
+    };
+    std::thread a(sender, 1000);
+    std::thread b(sender, 2000);
+
+    std::vector<can_frame> frames;
+    frames.reserve(2 * kCallsPerThread * 3);
+    while (frames.size() < frames.capacity())
+    {
+        pollfd pfd{bus.peer, POLLIN, 0};
+        ASSERT_GT(poll(&pfd, 1, 2000), 0) << "bus went quiet after " << frames.size() << " frames";
+        can_frame f{};
+        ASSERT_EQ(::recv(bus.peer, &f, sizeof(f), 0), static_cast<ssize_t>(sizeof(f)));
+        frames.push_back(f);
+    }
+    a.join();
+    b.join();
+
+    auto firstJoint = [](const can_frame& f)
+    { return static_cast<int32_t>((f.data[0] << 24) | (f.data[1] << 16) | (f.data[2] << 8) | f.data[3]); };
+    for (size_t i = 0; i < frames.size(); i += 3)
+    {
+        ASSERT_EQ(frames[i].can_id, 0x155u) << "triple " << i / 3 << " does not start with 0x155";
+        ASSERT_EQ(frames[i + 1].can_id, 0x156u);
+        ASSERT_EQ(frames[i + 2].can_id, 0x157u);
+        const auto target = firstJoint(frames[i]);
+        ASSERT_EQ(firstJoint(frames[i + 1]), target) << "triple " << i / 3 << " mixes two callers";
+        ASSERT_EQ(firstJoint(frames[i + 2]), target) << "triple " << i / 3 << " mixes two callers";
+    }
 }

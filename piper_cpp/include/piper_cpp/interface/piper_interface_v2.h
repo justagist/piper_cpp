@@ -675,6 +675,10 @@ private:
     // (CanCmd / MoveJ / 50% / PositionVelocity / 0 / Invalid).
     mutable std::mutex ctrl_151_tx_mutex_;
     ArmMsgMotionCtrl_2 ctrl_151_tx_;
+
+    // Held for the whole of a multi-frame command so two callers' frames cannot interleave
+    // into a target the arm never received from either.
+    std::mutex multipart_tx_mutex_;
     bool sendCommandedMotionCtrlLocked();
 
     void resetStates();
