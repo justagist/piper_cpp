@@ -186,3 +186,19 @@ TEST(PiperInterfaceV2, AllMotorAccLimitsValidOnlyAfterEveryMotorReplies)
         EXPECT_EQ(all.motor[i].max_joint_acc, i + 1);
     }
 }
+
+TEST(PiperInterfaceV2, DisconnectClearsCachedState)
+{
+    auto bus = makeBus();
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
+    const auto deadline = steady_clock::now() + 5s;
+    sendFrame(bus.peer, jointFeedbackFrame(0x2A5, 1, 2), deadline);
+    sendFrame(bus.peer, jointFeedbackFrame(0x2A6, 3, 4), deadline);
+    sendFrame(bus.peer, jointFeedbackFrame(0x2A7, 5, 6), deadline);
+    ASSERT_TRUE(waitFor([&] { return bus.piper->getArmJointStates().is_valid; }));
+
+    bus.piper->disconnectPort();
+    const auto js = bus.piper->getArmJointStates();
+    EXPECT_FALSE(js.is_valid) << "feedback from a closed session must not look current";
+    EXPECT_EQ(js.value.joint_6, 0);
+}

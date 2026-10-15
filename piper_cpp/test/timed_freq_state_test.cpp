@@ -88,3 +88,19 @@ TEST(TimedFreqState, SnapshotPairsValueWithItsOwnMetadata)
     writer.join();
     EXPECT_EQ(mismatches, 0);
 }
+
+TEST(TimedFreqState, ResetForgetsValueAndArrivals)
+{
+    TimedFreqState<Reading> state;
+    state.set(Reading{7}, 3.0);
+    ASSERT_TRUE(state.isValid());
+
+    state.reset();
+    EXPECT_FALSE(state.isValid());
+    EXPECT_FALSE(state.isHealthy());
+    EXPECT_EQ(state.getValue().n, 0);
+    EXPECT_EQ(state.getTimestamp(), 0.0);
+
+    state.set(Reading{8}, 4.0);
+    EXPECT_TRUE(state.isValid());
+}

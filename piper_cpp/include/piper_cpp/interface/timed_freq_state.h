@@ -68,6 +68,16 @@ public:
         initialized_.at(caller_id) = true;
     }
 
+    /// Forget the value and every part's arrival, as at construction.
+    void reset()
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        value_ = T{};
+        timestamp_ = 0.0;
+        std::fill(initialized_.begin(), initialized_.end(), false);
+        std::fill(hz_.begin(), hz_.end(), 0.0);
+    }
+
     bool isValid() const
     {
         std::lock_guard<std::mutex> lk(mutex_);
