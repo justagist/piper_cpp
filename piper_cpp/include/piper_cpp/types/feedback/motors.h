@@ -50,7 +50,7 @@ struct ArmMsgFeedbackHighSpd
 {
     uint32_t can_id{0};     ///< Source CAN ID 0x251..0x256, identifying which joint this is.
     int16_t motor_speed{0}; ///< Motor speed, 0.001 rad/s.
-    uint16_t current{0};    ///< Motor current, 0.001 A.
+    int16_t current{0};     ///< Motor current, 0.001 A, signed.
     int32_t pos{0};         ///< Raw motor position (encoder units; convert via DH if needed).
     float effort{0.0f};     ///< Derived torque, 0.001 N*m. Populated by `calcEffort()`.
 

@@ -33,8 +33,8 @@ PiperInterfaceV2::PiperInterfaceV2(
     arm_gripper_teaching_pendant_fb_.setNumCallers(1);
     arm_current_motor_angle_limit_max_spd_.setNumCallers(1);
     arm_current_motor_max_acc_limit_.setNumCallers(1);
-    arm_all_motor_angle_limit_max_spd_.setNumCallers(1);
-    arm_all_motor_max_acc_limit_.setNumCallers(1);
+    arm_all_motor_angle_limit_max_spd_.setNumCallers(6); // one reply per motor
+    arm_all_motor_max_acc_limit_.setNumCallers(6);       // one reply per motor
     arm_joint_ctrl_msgs_.setNumCallers(3); // joint control messages are updated in 3 parts
     arm_gripper_ctrl_.setNumCallers(1);    // gripper control messages
     arm_motion_ctrl_code_151_.setNumCallers(1);
@@ -288,11 +288,9 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
         }
         case ArmMsgType::FeedbackCurrentMotorAngleLimitMaxSpd:
         {
-            arm_current_motor_angle_limit_max_spd_.set(
-                msg.arm_feedback_current_motor_angle_limit_max_spd, msg.timestamp
-            );
             // all_motor_angle_limit_max_spd.motor[];
-            if (msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num > 6)
+            if (msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num < 1 ||
+                msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num > 6)
             {
                 // Handle unexpected motor number
                 std::cerr << "Error: Invalid motor number for current motor angle limit max speed: "
@@ -300,27 +298,37 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
             }
             else
             {
+                arm_current_motor_angle_limit_max_spd_.set(
+                    msg.arm_feedback_current_motor_angle_limit_max_spd, msg.timestamp
+                );
                 auto all_motor_angle_limit_max_spd = arm_all_motor_angle_limit_max_spd_.getValue();
                 all_motor_angle_limit_max_spd.motor[msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num - 1] =
                     msg.arm_feedback_current_motor_angle_limit_max_spd;
-                arm_all_motor_angle_limit_max_spd_.set(all_motor_angle_limit_max_spd, msg.timestamp);
+                arm_all_motor_angle_limit_max_spd_.set(
+                    all_motor_angle_limit_max_spd, msg.timestamp,
+                    msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num - 1
+                );
             }
             break;
         }
         case ArmMsgType::FeedbackCurrentMotorMaxAccLimit:
         {
-            arm_current_motor_max_acc_limit_.set(msg.arm_feedback_current_motor_max_acc_limit, msg.timestamp);
-            if (msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num > 6)
+            if (msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num < 1 ||
+                msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num > 6)
             {
                 std::cerr << "Error: Invalid motor number for current motor max acceleration limit: "
                           << msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num << "\n";
             }
             else
             {
+                arm_current_motor_max_acc_limit_.set(msg.arm_feedback_current_motor_max_acc_limit, msg.timestamp);
                 auto all_motor_max_acc_limit = arm_all_motor_max_acc_limit_.getValue();
                 all_motor_max_acc_limit.motor[msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num - 1] =
                     msg.arm_feedback_current_motor_max_acc_limit;
-                arm_all_motor_max_acc_limit_.set(all_motor_max_acc_limit, msg.timestamp);
+                arm_all_motor_max_acc_limit_.set(
+                    all_motor_max_acc_limit, msg.timestamp,
+                    msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num - 1
+                );
             }
             break;
         }
@@ -459,11 +467,8 @@ bool PiperInterfaceV2::sendPiperMsg(const PiperMessage &msg)
         std::cerr << "Error: Failed to encode Piper message.\n";
         return false;
     }
-    std::vector<uint8_t> data(tx.data, tx.data + PiperMessage::raw_data_len);
-
-    auto can_id = static_cast<uint16_t>(msgTypeToCanId(msg.type));
-
-    if (!arm_can_->sendCanMessage(can_id, data))
+    std::vector<uint8_t> data(tx.data, tx.data + tx.can_dlc);
+    if (!arm_can_->sendCanMessage(tx.can_id, data))
     {
         std::cerr << "Error: Failed to send CAN message.\n";
         return false;

@@ -5,8 +5,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <future>
+#include <initializer_list>
 #include <memory>
 #include <sys/socket.h>
 #include <thread>
@@ -48,6 +50,35 @@ can_frame jointFeedbackFrame(uint32_t id, int32_t a, int32_t b)
         f.data[4 + i] = static_cast<uint8_t>(ub >> (24 - 8 * i));
     }
     return f;
+}
+
+can_frame frame(uint32_t id, std::initializer_list<uint8_t> bytes)
+{
+    can_frame f{};
+    f.can_id = id;
+    f.can_dlc = static_cast<uint8_t>(bytes.size());
+    std::copy(bytes.begin(), bytes.end(), f.data);
+    return f;
+}
+
+// 0x473 reply: motor index, then max angle, min angle and max speed as big-endian int16.
+can_frame angleLimitReply(uint8_t motor, int16_t max_angle)
+{
+    const auto hi = static_cast<uint8_t>(max_angle >> 8);
+    const auto lo = static_cast<uint8_t>(max_angle);
+    return frame(0x473, {motor, hi, lo, 0, 0, 0, 0});
+}
+
+template <typename Pred> bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2s)
+{
+    const auto deadline = steady_clock::now() + timeout;
+    while (!pred())
+    {
+        if (steady_clock::now() > deadline)
+            return false;
+        std::this_thread::sleep_for(1ms);
+    }
+    return true;
 }
 
 void sendFrame(int fd, const can_frame& f, steady_clock::time_point deadline)
@@ -103,4 +134,55 @@ TEST(PiperInterfaceV2, ReadLoopKeepsUpWithBurst)
     EXPECT_EQ(js.value.joint_4, -2 * kSets);
     EXPECT_EQ(js.value.joint_5, 3 * kSets);
     EXPECT_EQ(js.value.joint_6, -3 * kSets);
+}
+
+TEST(PiperInterfaceV2, AllMotorAngleLimitsValidOnlyAfterEveryMotorReplies)
+{
+    auto bus = makeBus();
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
+    const auto deadline = steady_clock::now() + 5s;
+
+    // Out-of-range motor indices must be ignored by both states (index 0 used to write motor[-1]).
+    sendFrame(bus.peer, angleLimitReply(0, 999), deadline);
+    sendFrame(bus.peer, angleLimitReply(7, 999), deadline);
+    std::this_thread::sleep_for(50ms);
+    EXPECT_FALSE(bus.piper->getArmCurrentMotorAngleLimitMaxSpd().is_valid);
+    for (uint8_t motor = 1; motor <= 5; ++motor)
+        sendFrame(bus.peer, angleLimitReply(motor, motor * 100), deadline);
+    ASSERT_TRUE(waitFor([&] { return bus.piper->getArmCurrentMotorAngleLimitMaxSpd().value.motor_num == 5; }));
+    EXPECT_FALSE(bus.piper->getArmAllMotorAngleLimitMaxSpd().is_valid) << "five of six replies is not a complete set";
+
+    sendFrame(bus.peer, angleLimitReply(6, 600), deadline);
+    ASSERT_TRUE(waitFor([&] { return bus.piper->getArmAllMotorAngleLimitMaxSpd().is_valid; }));
+    const auto all = bus.piper->getArmAllMotorAngleLimitMaxSpd().value;
+    for (int i = 0; i < 6; ++i)
+    {
+        EXPECT_EQ(all.motor[i].motor_num, i + 1);
+        EXPECT_EQ(all.motor[i].max_angle_limit, (i + 1) * 100);
+    }
+}
+
+TEST(PiperInterfaceV2, AllMotorAccLimitsValidOnlyAfterEveryMotorReplies)
+{
+    auto bus = makeBus();
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
+    const auto deadline = steady_clock::now() + 5s;
+
+    sendFrame(bus.peer, frame(0x47C, {0, 0, 9}), deadline);
+    sendFrame(bus.peer, frame(0x47C, {7, 0, 9}), deadline);
+    std::this_thread::sleep_for(50ms);
+    EXPECT_FALSE(bus.piper->getArmCurrentMotorMaxAccLimit().is_valid);
+    for (uint8_t motor = 1; motor <= 5; ++motor)
+        sendFrame(bus.peer, frame(0x47C, {motor, 0, motor}), deadline);
+    ASSERT_TRUE(waitFor([&] { return bus.piper->getArmCurrentMotorMaxAccLimit().value.joint_motor_num == 5; }));
+    EXPECT_FALSE(bus.piper->getArmAllMotorMaxAccLimit().is_valid) << "five of six replies is not a complete set";
+
+    sendFrame(bus.peer, frame(0x47C, {6, 0, 6}), deadline);
+    ASSERT_TRUE(waitFor([&] { return bus.piper->getArmAllMotorMaxAccLimit().is_valid; }));
+    const auto all = bus.piper->getArmAllMotorMaxAccLimit().value;
+    for (int i = 0; i < 6; ++i)
+    {
+        EXPECT_EQ(all.motor[i].joint_motor_num, i + 1);
+        EXPECT_EQ(all.motor[i].max_joint_acc, i + 1);
+    }
 }
