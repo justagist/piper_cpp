@@ -44,6 +44,12 @@ install(TARGETS piper_cpp_ros
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY config launch urdf DESTINATION share/${PROJECT_NAME})
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(command_conversion_test test/command_conversion_test.cpp)
+  target_include_directories(command_conversion_test PRIVATE include)
+endif()
+
 ament_export_targets(export_piper_cpp_ros HAS_LIBRARY_TARGET)
 ament_export_dependencies(rclcpp rclcpp_lifecycle hardware_interface pluginlib piper_cpp)
 
