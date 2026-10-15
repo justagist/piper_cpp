@@ -40,6 +40,20 @@ PiperInterfaceV2::PiperInterfaceV2(
     arm_motion_ctrl_code_151_.setNumCallers(1);
     arm_instruction_response_.setNumCallers(1);
 
+    // Query responses and command echoes arrive once, not periodically, so their age says
+    // nothing about the link; only the periodic feedback streams keep the default timeout.
+    arm_current_end_vel_acc_.setHealthTimeout(kNoHealthTimeout);
+    arm_crash_protection_rating_fb_.setHealthTimeout(kNoHealthTimeout);
+    arm_gripper_teaching_pendant_fb_.setHealthTimeout(kNoHealthTimeout);
+    arm_current_motor_angle_limit_max_spd_.setHealthTimeout(kNoHealthTimeout);
+    arm_current_motor_max_acc_limit_.setHealthTimeout(kNoHealthTimeout);
+    arm_all_motor_angle_limit_max_spd_.setHealthTimeout(kNoHealthTimeout);
+    arm_all_motor_max_acc_limit_.setHealthTimeout(kNoHealthTimeout);
+    arm_joint_ctrl_msgs_.setHealthTimeout(kNoHealthTimeout);
+    arm_gripper_ctrl_.setHealthTimeout(kNoHealthTimeout);
+    arm_motion_ctrl_code_151_.setHealthTimeout(kNoHealthTimeout);
+    arm_instruction_response_.setHealthTimeout(kNoHealthTimeout);
+
     /// TODO: initialise other members as in python
 }
 

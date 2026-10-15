@@ -5,17 +5,20 @@
 #include <mutex>
 #include <numeric>
 #include <sstream>
+#include <vector>
 
 namespace piper_cpp
 {
 
+/// Pass to `TimedFreqState::setHealthTimeout()` for one-shot responses, which stay healthy
+/// once received.
+inline constexpr std::chrono::steady_clock::duration kNoHealthTimeout = std::chrono::steady_clock::duration::max();
+
+/// A value updated from the CAN read thread, with per-part arrival tracking so callers can tell
+/// a live stream from a stale one. Multipart messages register one caller per part.
 template <typename T> class TimedFreqState
 {
-
     using clock = std::chrono::steady_clock;
-
-    // if a set() call is not received within this time, the data stream is considered unhealthy.
-    const uint HEALTH_TIMEOUT_MS = 1000;
 
 public:
     TimedFreqState()
@@ -26,7 +29,7 @@ public:
     void setNumCallers(size_t num_callers)
     {
         std::lock_guard<std::mutex> lk(mutex_);
-        last_timestamp_.resize(num_callers, 0.0);
+        last_received_.resize(num_callers);
         initialized_.resize(num_callers, false);
         hz_.resize(num_callers, 0.0);
     }
@@ -34,54 +37,45 @@ public:
     size_t getNumCallers() const
     {
         std::lock_guard<std::mutex> lk(mutex_);
-        return static_cast<size_t>(last_timestamp_.size());
+        return last_received_.size();
+    }
+
+    /// How long after the last `set()` of any part the state stops being healthy. Defaults to
+    /// one second, which suits the periodic feedback streams.
+    void setHealthTimeout(clock::duration timeout)
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        health_timeout_ = timeout;
     }
 
     /// Atomically replace the contained value, and update timestamp/hz.
     void set(const T& newValue, double timestamp, int caller_id = 0)
     {
         std::lock_guard<std::mutex> lk(mutex_);
-        double now_sec =
-            std::chrono::duration_cast<std::chrono::duration<double>>(clock::now().time_since_epoch()).count();
+        const auto now = clock::now();
 
         // compute hz only if we've been initialized once before
         if (initialized_.at(caller_id))
         {
-            double dt = now_sec - last_timestamp_.at(caller_id);
+            const double dt = std::chrono::duration<double>(now - last_received_.at(caller_id)).count();
             hz_.at(caller_id) = (dt > 0.0) ? (1.0 / dt) : 0.0;
         }
         value_ = newValue;
-        timestamp_ = timestamp; // Use provided timestamp, not now_sec
-        last_timestamp_.at(caller_id) = now_sec;
+        timestamp_ = timestamp; // Use provided timestamp, not now
+        last_received_.at(caller_id) = now;
         initialized_.at(caller_id) = true;
     }
 
     bool isValid() const
     {
         std::lock_guard<std::mutex> lk(mutex_);
-        return initialized_.size() > 0 &&
-               std::all_of(initialized_.begin(), initialized_.end(), [](bool init) { return init; });
+        return isValidLocked();
     }
 
     bool isHealthy() const
     {
-        if (!isValid())
-        {
-            return false;
-        }
-        {
-            std::lock_guard<std::mutex> lk(mutex_);
-            double now_sec =
-                std::chrono::duration_cast<std::chrono::duration<double>>(clock::now().time_since_epoch()).count();
-            for (size_t i = 0; i < last_timestamp_.size(); ++i)
-            {
-                if (last_timestamp_.at(i) + HEALTH_TIMEOUT_MS < now_sec)
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
+        std::lock_guard<std::mutex> lk(mutex_);
+        return isHealthyLocked(clock::now());
     }
 
     /// Atomically read out the payload
@@ -100,15 +94,36 @@ public:
     double getHz() const
     {
         std::lock_guard<std::mutex> lk(mutex_);
-        return std::accumulate(hz_.begin(), hz_.end(), 0.0) / hz_.size();
+        return getHzLocked();
     }
 
 private:
+    bool isValidLocked() const
+    {
+        return initialized_.size() > 0 &&
+               std::all_of(initialized_.begin(), initialized_.end(), [](bool init) { return init; });
+    }
+
+    bool isHealthyLocked(clock::time_point now) const
+    {
+        if (!isValidLocked())
+            return false;
+        for (const auto& received : last_received_)
+        {
+            if (now - received > health_timeout_)
+                return false;
+        }
+        return true;
+    }
+
+    double getHzLocked() const { return std::accumulate(hz_.begin(), hz_.end(), 0.0) / hz_.size(); }
+
     mutable std::mutex mutex_;
     T value_{};
     double timestamp_{0.0};
+    clock::duration health_timeout_{std::chrono::seconds(1)};
     std::vector<double> hz_; // Instantaneous rate
-    std::vector<double> last_timestamp_{};
+    std::vector<clock::time_point> last_received_;
     std::vector<bool> initialized_;
 };
 
