@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <csignal>
 #include <future>
 #include <initializer_list>
 #include <memory>
@@ -210,6 +211,7 @@ TEST(PiperInterfaceV2, ConcurrentJointCommandsDoNotInterleave)
     // Each controlJoints() call is three frames (0x155, 0x156, 0x157). Two callers with
     // different targets must still produce whole triples on the bus, never a mix.
     constexpr int kCallsPerThread = 500;
+    std::signal(SIGPIPE, SIG_IGN); // a sender writing into the shut-down peer must fail, not die
     auto bus = makeBus();
     ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/false));
 
@@ -222,18 +224,24 @@ TEST(PiperInterfaceV2, ConcurrentJointCommandsDoNotInterleave)
     std::thread b(sender, 2000);
 
     // Receive failures are recorded rather than asserted here so the senders are always
-    // joined; a quiet bus means they have finished, so the joins cannot hang.
+    // joined; shutting the peer down first turns any blocked send into a failure, so the joins
+    // cannot hang. One deadline covers the whole exchange, so a scheduling pause between two
+    // frames does not count as a quiet bus.
     constexpr size_t kExpectedFrames = 2 * kCallsPerThread * 3;
+    const auto deadline = steady_clock::now() + 10s;
     std::vector<can_frame> frames;
     frames.reserve(kExpectedFrames);
     bool received_all = true;
     while (frames.size() < kExpectedFrames)
     {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - steady_clock::now());
         pollfd pfd{bus.peer, POLLIN, 0};
         can_frame f{};
-        if (poll(&pfd, 1, 2000) <= 0 || ::recv(bus.peer, &f, sizeof(f), 0) != static_cast<ssize_t>(sizeof(f)))
+        if (left.count() <= 0 || poll(&pfd, 1, static_cast<int>(left.count())) <= 0 ||
+            ::recv(bus.peer, &f, sizeof(f), 0) != static_cast<ssize_t>(sizeof(f)))
         {
             received_all = false;
+            ::shutdown(bus.peer, SHUT_RDWR);
             break;
         }
         frames.push_back(f);
@@ -250,6 +258,7 @@ TEST(PiperInterfaceV2, ConcurrentJointCommandsDoNotInterleave)
         ASSERT_EQ(frames[i + 1].can_id, 0x156u);
         ASSERT_EQ(frames[i + 2].can_id, 0x157u);
         const auto target = firstJoint(frames[i]);
+        ASSERT_TRUE(target == 1000 || target == 2000) << "triple " << i / 3 << " carries neither caller's target";
         ASSERT_EQ(firstJoint(frames[i + 1]), target) << "triple " << i / 3 << " mixes two callers";
         ASSERT_EQ(firstJoint(frames[i + 2]), target) << "triple " << i / 3 << " mixes two callers";
     }
