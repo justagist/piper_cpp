@@ -84,14 +84,14 @@ inline void int8_to_bytes(uint8_t val, uint8_t *out) { out[0] = val & 0xFF; }
 
 bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double timestamp, PiperMessage &msg)
 {
-    // The Piper protocol uses standard 11-bit data frames only; remote-request, error and
-    // extended frames must not be mistaken for feedback.
-    if (rx_frame.can_id & (CAN_EFF_FLAG | CAN_RTR_FLAG | CAN_ERR_FLAG))
+    // The Piper protocol uses standard 11-bit data frames only. Anything above those bits is
+    // a remote-request, error or extended flag, or a reserved bit no valid frame sets.
+    if ((rx_frame.can_id & ~CAN_SFF_MASK) || rx_frame.can_dlc > CAN_MAX_DLEN)
     {
         msg.type = ArmMsgType::Unknown;
         return false;
     }
-    uint32_t can_id = rx_frame.can_id & CAN_SFF_MASK;
+    uint32_t can_id = rx_frame.can_id;
     const uint8_t *data = rx_frame.data;
     auto can_enum_id = static_cast<CanIDPiper>(can_id);
     msg.can_id = can_id;

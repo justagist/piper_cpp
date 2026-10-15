@@ -34,13 +34,24 @@ TEST(PiperParserV2, RejectsFramesThatAreNotStandardData)
     const auto joints = frame(0x2A5, {0, 0, 0, 1, 0, 0, 0, 2});
     ASSERT_TRUE(parser.decodeMessage(joints, 0.0, msg));
 
-    for (canid_t flag : {CAN_RTR_FLAG, CAN_EFF_FLAG, CAN_ERR_FLAG})
+    // Flags, and a reserved bit between the 11-bit ID and the flags, which masking would hide.
+    for (canid_t bit : {CAN_RTR_FLAG, CAN_EFF_FLAG, CAN_ERR_FLAG, canid_t{0x800}})
     {
         can_frame f = joints;
-        f.can_id |= flag;
-        EXPECT_FALSE(parser.decodeMessage(f, 0.0, msg)) << "flag 0x" << std::hex << flag;
+        f.can_id |= bit;
+        EXPECT_FALSE(parser.decodeMessage(f, 0.0, msg)) << "bit 0x" << std::hex << bit;
         EXPECT_EQ(msg.type, ArmMsgType::Unknown);
     }
+}
+
+TEST(PiperParserV2, RejectsDlcAboveClassicFrameSize)
+{
+    PiperParserV2 parser;
+    PiperMessage msg;
+    // Firmware chunks are copied by DLC, so an oversize DLC would read past the buffer.
+    auto f = frame(0x4AF, {'S', '-', 'V', '1', '.', '5', '-', '2'});
+    f.can_dlc = 9;
+    EXPECT_FALSE(parser.decodeMessage(f, 0.0, msg));
 }
 
 TEST(PiperParserV2, RejectsPayloadShorterThanTheFieldsRead)
