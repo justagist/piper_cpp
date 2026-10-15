@@ -87,6 +87,14 @@ public:
     /// want to re-discover its limits.
     void piperInit();
 
+    /// Block until every motor has answered both limit queries, re-sending the queries every
+    /// `retry_interval` so a lost frame does not leave the aggregates invalid for the session.
+    /// Requires the read thread to be running. Returns false if `timeout` passes first.
+    bool waitForMotorLimits(
+        std::chrono::milliseconds timeout = std::chrono::milliseconds{2000},
+        std::chrono::milliseconds retry_interval = std::chrono::milliseconds{200}
+    );
+
     // ---- State getters --------------------------------------------------------------------
     //
     // All getters below return a `StateSnapshot<T>` that bundles the latest received message
@@ -170,7 +178,7 @@ public:
 
     /// Per-motor angle/speed limits for all six motors. The arm fills this in after the search
     /// queries that `connectPort()` fires automatically; ready within a second of opening.
-    /// `is_valid` only once every motor has replied.
+    /// `is_valid` only once every motor has replied; `waitForMotorLimits()` retries until then.
     StateSnapshot<ArmMsgAllCurrentMotorAngleLimitMaxSpd> getArmAllMotorAngleLimitMaxSpd() const
     {
         return StateSnapshot(arm_all_motor_angle_limit_max_spd_);

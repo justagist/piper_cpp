@@ -932,6 +932,26 @@ bool PiperInterfaceV2::searchAllMotorLimits()
     return true;
 }
 
+bool PiperInterfaceV2::waitForMotorLimits(std::chrono::milliseconds timeout, std::chrono::milliseconds retry_interval)
+{
+    using clock = std::chrono::steady_clock;
+    const auto deadline = clock::now() + timeout;
+    auto last_sent = clock::now();
+    searchAllMotorLimits();
+    while (!(arm_all_motor_angle_limit_max_spd_.isValid() && arm_all_motor_max_acc_limit_.isValid()))
+    {
+        if (clock::now() >= deadline)
+            return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (clock::now() - last_sent >= retry_interval)
+        {
+            searchAllMotorLimits();
+            last_sent = clock::now();
+        }
+    }
+    return true;
+}
+
 bool PiperInterfaceV2::sendFirmwareQuery()
 {
     if (!connected_.load(std::memory_order_relaxed))
