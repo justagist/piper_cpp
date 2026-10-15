@@ -1,5 +1,9 @@
 # piper_cpp_moveit
 
+[![ci](https://github.com/justagist/piper_cpp/actions/workflows/ci.yml/badge.svg)](https://github.com/justagist/piper_cpp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
+[![ROS 2 Jazzy](https://img.shields.io/badge/ROS_2-Jazzy-blue)](https://docs.ros.org/en/jazzy/)
+
 MoveIt 2 configuration for the AgileX Piper 6-DOF arm and its optional parallel-jaw
 gripper. Plans against the URDF from `piper_description` and dispatches the resulting
 trajectories through the `joint_trajectory_controller` (and `gripper_controller`, when

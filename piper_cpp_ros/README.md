@@ -1,5 +1,10 @@
 # piper_cpp_ros
 
+[![ci](https://github.com/justagist/piper_cpp/actions/workflows/ci.yml/badge.svg)](https://github.com/justagist/piper_cpp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
+[![ROS 2 Jazzy](https://img.shields.io/badge/ROS_2-Jazzy-blue)](https://docs.ros.org/en/jazzy/)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)](CMakeLists.txt)
+
 ros2_control hardware interface for the AgileX Piper 6-DOF arm and its optional parallel-jaw
 gripper, built on top of [`piper_cpp`](../piper_cpp).
 

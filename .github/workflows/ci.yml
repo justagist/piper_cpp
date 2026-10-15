@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # piper_cpp is a plain CMake library with no ROS dependency; build it the way the
+  # README documents for non-ROS users.
+  standalone:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config libsocketcan-dev libgtest-dev
+      - name: Configure
+        run: cmake -S piper_cpp -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  ros:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src/piper_cpp
+      - name: Install dependencies
+        # piper_cpp has no package.xml, so rosdep cannot see its libsocketcan dependency.
+        # piper_description is an external runtime dependency not needed to build.
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libsocketcan-dev libgtest-dev
+          rosdep update
+          rosdep install --from-paths src --ignore-src -y --skip-keys piper_description
+      - name: Build
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --packages-up-to piper_cpp_ros piper_cpp_moveit --event-handlers console_cohesion+
+      - name: Test
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon test --packages-select piper_cpp piper_cpp_ros piper_cpp_moveit --event-handlers console_cohesion+
+          colcon test-result --verbose
