@@ -166,12 +166,13 @@ public:
 
     /// Per-motor angle/speed limits for all six motors. The arm fills this in after the search
     /// queries that `connectPort()` fires automatically; ready within a second of opening.
+    /// `is_valid` only once every motor has replied.
     StateSnapshot<ArmMsgAllCurrentMotorAngleLimitMaxSpd> getArmAllMotorAngleLimitMaxSpd() const
     {
         return StateSnapshot(arm_all_motor_angle_limit_max_spd_);
     }
 
-    /// Per-motor max-acceleration limits for all six motors. Same lifecycle as above.
+    /// Per-motor max-acceleration limits for all six motors. Same lifecycle and validity as above.
     StateSnapshot<ArmMsgFeedbackAllCurrentMotorMaxAccLimit> getArmAllMotorMaxAccLimit() const
     {
         return StateSnapshot(arm_all_motor_max_acc_limit_);

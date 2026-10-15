@@ -33,8 +33,8 @@ PiperInterfaceV2::PiperInterfaceV2(
     arm_gripper_teaching_pendant_fb_.setNumCallers(1);
     arm_current_motor_angle_limit_max_spd_.setNumCallers(1);
     arm_current_motor_max_acc_limit_.setNumCallers(1);
-    arm_all_motor_angle_limit_max_spd_.setNumCallers(1);
-    arm_all_motor_max_acc_limit_.setNumCallers(1);
+    arm_all_motor_angle_limit_max_spd_.setNumCallers(6); // one reply per motor
+    arm_all_motor_max_acc_limit_.setNumCallers(6);       // one reply per motor
     arm_joint_ctrl_msgs_.setNumCallers(3); // joint control messages are updated in 3 parts
     arm_gripper_ctrl_.setNumCallers(1);    // gripper control messages
     arm_motion_ctrl_code_151_.setNumCallers(1);
@@ -292,7 +292,8 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
                 msg.arm_feedback_current_motor_angle_limit_max_spd, msg.timestamp
             );
             // all_motor_angle_limit_max_spd.motor[];
-            if (msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num > 6)
+            if (msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num < 1 ||
+                msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num > 6)
             {
                 // Handle unexpected motor number
                 std::cerr << "Error: Invalid motor number for current motor angle limit max speed: "
@@ -303,14 +304,18 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
                 auto all_motor_angle_limit_max_spd = arm_all_motor_angle_limit_max_spd_.getValue();
                 all_motor_angle_limit_max_spd.motor[msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num - 1] =
                     msg.arm_feedback_current_motor_angle_limit_max_spd;
-                arm_all_motor_angle_limit_max_spd_.set(all_motor_angle_limit_max_spd, msg.timestamp);
+                arm_all_motor_angle_limit_max_spd_.set(
+                    all_motor_angle_limit_max_spd, msg.timestamp,
+                    msg.arm_feedback_current_motor_angle_limit_max_spd.motor_num - 1
+                );
             }
             break;
         }
         case ArmMsgType::FeedbackCurrentMotorMaxAccLimit:
         {
             arm_current_motor_max_acc_limit_.set(msg.arm_feedback_current_motor_max_acc_limit, msg.timestamp);
-            if (msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num > 6)
+            if (msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num < 1 ||
+                msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num > 6)
             {
                 std::cerr << "Error: Invalid motor number for current motor max acceleration limit: "
                           << msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num << "\n";
@@ -320,7 +325,10 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
                 auto all_motor_max_acc_limit = arm_all_motor_max_acc_limit_.getValue();
                 all_motor_max_acc_limit.motor[msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num - 1] =
                     msg.arm_feedback_current_motor_max_acc_limit;
-                arm_all_motor_max_acc_limit_.set(all_motor_max_acc_limit, msg.timestamp);
+                arm_all_motor_max_acc_limit_.set(
+                    all_motor_max_acc_limit, msg.timestamp,
+                    msg.arm_feedback_current_motor_max_acc_limit.joint_motor_num - 1
+                );
             }
             break;
         }
