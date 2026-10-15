@@ -212,7 +212,11 @@ hardware_interface::CallbackReturn PiperHardware::on_activate(const rclcpp_lifec
     }
 
     RCLCPP_INFO(rclcpp::get_logger(kLogger), "Enabling joint motors...");
-    piper_->enableRobot();
+    if (!piper_->enableRobot())
+    {
+        RCLCPP_ERROR(rclcpp::get_logger(kLogger), "Failed to send the enable command.");
+        return hardware_interface::CallbackReturn::ERROR;
+    }
     auto t0 = steady_clock::now();
     while (!piper_->isEnabled())
     {
@@ -306,7 +310,11 @@ hardware_interface::CallbackReturn PiperHardware::on_activate(const rclcpp_lifec
                 rclcpp::get_logger(kLogger),
                 "home_gripper_on_activate=true -- latching current jaw position as gripper zero."
             );
-            piper_->setGripperZero();
+            if (!piper_->setGripperZero())
+            {
+                RCLCPP_ERROR(rclcpp::get_logger(kLogger), "Failed to send the gripper zero command.");
+                return hardware_interface::CallbackReturn::ERROR;
+            }
             std::this_thread::sleep_for(50ms);
             gs = piper_->getGripperStates(); // refresh post-zero
         }
