@@ -270,6 +270,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
         msg.arm_motion_ctrl_2.move_spd_rate_ctrl = data[2];
         msg.arm_motion_ctrl_2.mit_mode = data[3];
         msg.arm_motion_ctrl_2.residence_time = data[4];
+        msg.arm_motion_ctrl_2.installation_pos = data[5];
         break;
     }
 

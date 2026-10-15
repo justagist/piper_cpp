@@ -85,3 +85,21 @@ TEST(PiperParserV2, EncoderDerivesIdAndDlcFromType)
     EXPECT_EQ(tx.can_dlc, 8);
     EXPECT_EQ(tx.data[3], 0xE8); // 1000 = 0x000003E8, big-endian
 }
+
+TEST(PiperParserV2, MotionCtrl2RoundTripsInstallationPos)
+{
+    PiperParserV2 parser;
+    PiperMessage msg;
+    msg.type = ArmMsgType::MotionCtrl2;
+    msg.arm_motion_ctrl_2.move_spd_rate_ctrl = 30;
+    msg.arm_motion_ctrl_2.installation_pos = 3;
+
+    can_frame tx{};
+    ASSERT_TRUE(parser.encodeMessage(msg, tx));
+    EXPECT_EQ(tx.can_id, 0x151u);
+
+    PiperMessage back;
+    ASSERT_TRUE(parser.decodeMessage(tx, 0.0, back));
+    EXPECT_EQ(back.arm_motion_ctrl_2.move_spd_rate_ctrl, 30);
+    EXPECT_EQ(back.arm_motion_ctrl_2.installation_pos, 3);
+}
