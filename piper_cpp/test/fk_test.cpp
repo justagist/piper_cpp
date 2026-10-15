@@ -2,8 +2,6 @@
 
 #include <gtest/gtest.h>
 
-#include <cmath>
-
 using piper_cpp::PiperForwardKinematics;
 
 // The manufacturer's SDK quotes the home pose of the default (offset) DH set in mm and
@@ -21,7 +19,7 @@ TEST(ForwardKinematics, InputIsRadians)
 {
     PiperForwardKinematics fk;
     // A quarter turn of joint 1 swings the home position from +x onto +y.
-    const auto pose = fk.calcFK({M_PI / 2, 0, 0, 0, 0, 0}).back();
+    const auto pose = fk.calcFK({PiperForwardKinematics::PI / 2, 0, 0, 0, 0, 0}).back();
     EXPECT_NEAR(pose[0], 0.0, 0.01);
     EXPECT_NEAR(pose[1], fk.init_pos[0], 0.01);
     EXPECT_NEAR(pose[2], fk.init_pos[2], 0.01);
