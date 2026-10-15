@@ -98,7 +98,10 @@ TEST(PiperParserV2, EncoderDerivesIdAndDlcFromType)
     ASSERT_TRUE(parser.encodeMessage(msg, tx));
     EXPECT_EQ(tx.can_id, 0x155u);
     EXPECT_EQ(tx.can_dlc, 8);
-    EXPECT_EQ(tx.data[3], 0xE8); // 1000 = 0x000003E8, big-endian
+    EXPECT_EQ(tx.data[0], 0x00); // 1000 = 0x000003E8, big-endian
+    EXPECT_EQ(tx.data[1], 0x00);
+    EXPECT_EQ(tx.data[2], 0x03);
+    EXPECT_EQ(tx.data[3], 0xE8);
 }
 
 TEST(PiperParserV2, MotionCtrl2RoundTripsInstallationPos)
