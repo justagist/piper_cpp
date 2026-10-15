@@ -82,6 +82,18 @@ static bool renameInterface(const std::string& old_name, const std::string& new_
     return ok;
 }
 
+// A parking name for an adapter awaiting its final name: short enough for IFNAMSIZ with any
+// prefix, not currently in use, and never one of the final names.
+static std::string freeTemporaryName(const std::vector<std::string>& targets)
+{
+    for (int n = 0;; ++n)
+    {
+        const std::string tmp = "cantmp" + std::to_string(n);
+        if (if_nametoindex(tmp.c_str()) == 0 && std::find(targets.begin(), targets.end(), tmp) == targets.end())
+            return tmp;
+    }
+}
+
 std::vector<PortPair> findPorts() { return getCanInterfacesInternal(); }
 
 std::vector<std::string> activePorts()
@@ -118,6 +130,9 @@ void activate(const std::vector<PortPair>& ports, const std::string& prefix, int
     // be taken by the wrong adapters (two adapters swapping names), so: stop everything, park
     // each adapter that needs renaming under a temporary name, then give out the final names
     // and bring the interfaces up.
+    std::vector<std::string> targets;
+    for (size_t i = 0; i < list.size(); ++i)
+        targets.push_back(prefix + std::to_string(i));
     std::vector<std::string> current;
     for (size_t i = 0; i < list.size(); ++i)
     {
@@ -125,9 +140,9 @@ void activate(const std::vector<PortPair>& ports, const std::string& prefix, int
         if (can_do_stop(iface.c_str()) < 0)
             throw std::runtime_error("Failed to stop interface " + iface);
         std::string name = iface;
-        if (iface != prefix + std::to_string(i))
+        if (iface != targets[i])
         {
-            const std::string tmp = prefix + "tmp" + std::to_string(i);
+            const std::string tmp = freeTemporaryName(targets);
             if (!renameInterface(iface, tmp))
                 std::cerr << "[WARN] rename " << iface << "->" << tmp << " failed";
             else
@@ -138,7 +153,7 @@ void activate(const std::vector<PortPair>& ports, const std::string& prefix, int
     for (size_t i = 0; i < list.size(); ++i)
     {
         std::string name = current[i];
-        const std::string target = prefix + std::to_string(i);
+        const std::string& target = targets[i];
         if (name != target)
         {
             if (!renameInterface(name, target))
