@@ -43,6 +43,15 @@ PiperInterfaceV2::PiperInterfaceV2(
     /// TODO: initialise other members as in python
 }
 
+PiperInterfaceV2::PiperInterfaceV2(
+    std::unique_ptr<StdCanInterface> can, bool dh_offset, bool sdk_joint_limit, bool sdk_gripper_limit
+)
+    : PiperInterfaceV2("", /*judge_flag=*/false, /*auto_init=*/false, dh_offset, sdk_joint_limit, sdk_gripper_limit)
+{
+    arm_can_ = std::move(can);
+    arm_can_->setCallback([this](const struct can_frame &frame, double timestamp) { parseCANFrame(frame, timestamp); });
+}
+
 PiperInterfaceV2::~PiperInterfaceV2() { disconnectPort(); }
 bool PiperInterfaceV2::connectPort(bool can_init, bool piper_init, bool start_threads)
 {
@@ -82,14 +91,11 @@ void PiperInterfaceV2::piperInit()
 
 void PiperInterfaceV2::readLoop()
 {
+    // readCanMessage() blocks until a frame arrives or disconnectPort() interrupts it, so no
+    // sleep is needed and queued frames are drained as fast as they are parsed.
     while (!stop_read_.load(std::memory_order_relaxed))
     {
-        if (arm_can_->readCanMessage())
-        {
-            // Process the received CAN message
-            // The callback will handle parsing and updating state
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1)); // TODO: Adjust sleep duration as needed
+        arm_can_->readCanMessage();
     }
 }
 
@@ -100,6 +106,7 @@ void PiperInterfaceV2::disconnectPort(std::chrono::milliseconds timeout)
         return; // Already disconnected
     }
     stop_read_.store(true, std::memory_order_relaxed);
+    arm_can_->interruptRead();
     if (read_thread_.joinable())
     {
         read_thread_.join();

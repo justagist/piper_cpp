@@ -2,6 +2,7 @@
 #define PIPER_CPP_STD_CAN_INTERFACE_H
 
 #include "piper_cpp/can_utils.h"
+#include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -11,7 +12,9 @@
 #include <linux/can/raw.h>
 #include <net/if.h>
 #include <optional>
+#include <poll.h>
 #include <string>
+#include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -29,8 +32,8 @@ public:
         std::string channel_name = "can0", int expected_bitrate = 1000000, bool judge_flag = true,
         bool auto_init = true, CanCallback callback = nullptr
     )
-        : channel_name_(std::move(channel_name)), expected_bitrate_(expected_bitrate), callback_(std::move(callback)),
-          sock_(-1)
+        : channel_name_(std::move(channel_name)), expected_bitrate_(expected_bitrate), sock_(-1),
+          wake_fd_(makeWakeFd()), callback_(std::move(callback))
     {
         if (judge_flag)
             judgeCanInfo();
@@ -38,7 +41,23 @@ public:
             init();
     }
 
-    ~StdCanInterface() { close(); }
+    /// Adopt an already-open socket that delivers one `can_frame` per datagram (a raw CAN socket,
+    /// or a socketpair in tests). Takes ownership of `socket_fd`; `init()` is a no-op.
+    explicit StdCanInterface(int socket_fd, CanCallback callback = nullptr)
+        : channel_name_(), expected_bitrate_(0), sock_(socket_fd), wake_fd_(makeWakeFd()),
+          callback_(std::move(callback))
+    {
+    }
+
+    // Owns file descriptors, so copying would double-close them.
+    StdCanInterface(const StdCanInterface&) = delete;
+    StdCanInterface& operator=(const StdCanInterface&) = delete;
+
+    ~StdCanInterface()
+    {
+        close();
+        ::close(wake_fd_);
+    }
 
     bool init()
     {
@@ -70,6 +89,7 @@ public:
             perror("bind");
             return false;
         }
+        drainWake(); // an interrupt left over from a previous session must not cancel the first read
         return true;
     }
 
@@ -96,10 +116,29 @@ public:
             );
     }
 
+    /// Block until one frame arrives and hand it to the callback, or until `interruptRead()` is
+    /// called. Returns true only when a frame was delivered to the callback.
     bool readCanMessage()
     {
         if (sock_ < 0)
             return false;
+
+        struct pollfd fds[2] = {
+            {sock_,    POLLIN, 0},
+            {wake_fd_, POLLIN, 0}
+        };
+        int ready;
+        do
+        {
+            ready = poll(fds, 2, -1);
+        } while (ready < 0 && errno == EINTR);
+        if (ready < 0)
+            return false;
+        if (fds[1].revents & POLLIN)
+        {
+            drainWake();
+            return false;
+        }
 
         struct can_frame frame;
         struct msghdr msg = {};
@@ -138,6 +177,14 @@ public:
         }
         return false;
     }
+
+    /// Wake a thread blocked in `readCanMessage()`, which then returns false. Safe to call from
+    /// any thread. If no read is in progress, the next `readCanMessage()` returns false once.
+    void interruptRead() { eventfd_write(wake_fd_, 1); }
+
+    /// Replace the receive callback. Not synchronised with `readCanMessage()`; set it before
+    /// reading starts.
+    void setCallback(CanCallback callback) { callback_ = std::move(callback); }
 
     bool sendCanMessage(uint32_t id, const std::vector<uint8_t>& data)
     {
@@ -178,9 +225,24 @@ private:
         return f.good();
     }
 
+    static int makeWakeFd()
+    {
+        int fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        if (fd < 0)
+            throw std::runtime_error(std::string("eventfd: ") + strerror(errno));
+        return fd;
+    }
+
+    void drainWake()
+    {
+        eventfd_t value;
+        (void)eventfd_read(wake_fd_, &value);
+    }
+
     std::string channel_name_;
     int expected_bitrate_;
     int sock_;
+    int wake_fd_;
     struct sockaddr_can addr_
     {
     };

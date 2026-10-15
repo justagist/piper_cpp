@@ -33,13 +33,14 @@ bytes.
 
 - Linux with SocketCAN (any recent kernel).
 - `libsocketcan-dev` and `pkg-config`.
+- `libgtest-dev` for the unit tests (pass `-DBUILD_TESTING=OFF` to skip them).
 - A C++17 compiler (`build-essential`).
 - `cmake >= 3.10`.
 - `can-utils` and `iproute2` are useful for bringing up the bus and sniffing frames
   (`candump`, `ip link`).
 
 ```bash
-sudo apt install build-essential cmake pkg-config libsocketcan-dev can-utils iproute2
+sudo apt install build-essential cmake pkg-config libsocketcan-dev libgtest-dev can-utils iproute2
 ```
 
 ## Installation
@@ -75,6 +76,16 @@ sudo cmake --install build
 
 The CLI binaries land in `build/` (or `${CMAKE_INSTALL_PREFIX}/bin` after install). The
 library installs as `libpiper_cpp.a` with headers under `include/piper_cpp/`.
+
+### Running the tests
+
+The unit tests drive the CAN transport through a socketpair, so they need no adapter or arm:
+
+```bash
+ctest --test-dir build --output-on-failure
+# or, inside a colcon workspace:
+colcon test --packages-select piper_cpp
+```
 
 ## Bringing up the CAN bus
 
