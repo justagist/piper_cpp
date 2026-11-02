@@ -222,9 +222,10 @@ TEST(PiperSdkReference, FeedbackDecodesLikeTheSdk)
         else if (kind == "ik")
         {
             const auto& ik = msg.arm_ik_joint_feedback;
-            const int32_t* pair = f.can_id == 0x2AA ? &ik.joint_1 : f.can_id == 0x2AB ? &ik.joint_3 : &ik.joint_5;
-            EXPECT_EQ(pair[0], x[0]) << what;
-            EXPECT_EQ(pair[1], x[1]) << what;
+            const int32_t first = f.can_id == 0x2AA ? ik.joint_1 : f.can_id == 0x2AB ? ik.joint_3 : ik.joint_5;
+            const int32_t second = f.can_id == 0x2AA ? ik.joint_2 : f.can_id == 0x2AB ? ik.joint_4 : ik.joint_6;
+            EXPECT_EQ(first, x[0]) << what;
+            EXPECT_EQ(second, x[1]) << what;
         }
         else if (kind == "joint")
         {

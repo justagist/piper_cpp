@@ -110,7 +110,7 @@ public:
 
     void setGripperAngleRangeDeg(double min_deg, double max_deg)
     {
-        if (max_deg < min_deg)
+        if (!(max_deg >= min_deg)) // also refuses NaN
             throw std::invalid_argument("max_val must be >= min_val");
         std::unique_lock lock(mutex_);
         gripper_angle_range_deg_ = {min_deg, max_deg};

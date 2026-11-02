@@ -83,10 +83,23 @@ bool PiperParserV3::decodeMessage(const struct can_frame &rx_frame, double times
         if (!acceptFrame(rx_frame, timestamp, msg))
             return false;
         auto &ik = msg.arm_ik_joint_feedback;
-        int32_t *pair[] = {&ik.joint_1, &ik.joint_3, &ik.joint_5};
-        const size_t part = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::IKJointFeedback12);
-        pair[part][0] = bytesToInt32(&rx_frame.data[0]);
-        pair[part][1] = bytesToInt32(&rx_frame.data[4]);
+        const int32_t first = bytesToInt32(&rx_frame.data[0]);
+        const int32_t second = bytesToInt32(&rx_frame.data[4]);
+        if (msg.type == ArmMsgType::IKJointFeedback12)
+        {
+            ik.joint_1 = first;
+            ik.joint_2 = second;
+        }
+        else if (msg.type == ArmMsgType::IKJointFeedback34)
+        {
+            ik.joint_3 = first;
+            ik.joint_4 = second;
+        }
+        else
+        {
+            ik.joint_5 = first;
+            ik.joint_6 = second;
+        }
         return true;
     }
     default:

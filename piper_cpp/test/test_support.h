@@ -28,8 +28,14 @@ using std::chrono::steady_clock;
 template <typename Interface> struct Bus
 {
     int peer;
-    std::unique_ptr<Interface> piper; // destroyed first, so the read thread is gone before peer closes
-    ~Bus() { ::close(peer); }
+    std::unique_ptr<Interface> piper;
+    // The interface and its read thread must be gone before the peer end closes, and members
+    // are only destroyed after this body runs.
+    ~Bus()
+    {
+        piper.reset();
+        ::close(peer);
+    }
 };
 
 /// An interface of the given protocol class wired to the returned peer socket. `args` are the
