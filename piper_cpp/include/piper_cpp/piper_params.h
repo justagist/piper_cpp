@@ -50,6 +50,7 @@ public:
         std::unique_lock lock(mutex_);
         joint_limits_rad_ = kDefaultsJointRad;
         gripper_range_m_ = kDefaultGripperRangeM;
+        gripper_angle_range_deg_ = kDefaultGripperAngleRangeDeg;
     }
 
     PiperParams getPiperParams() const
@@ -98,6 +99,21 @@ public:
             throw std::invalid_argument("max_val must be >= min_val");
         std::unique_lock lock(mutex_);
         gripper_range_m_ = {min_m, max_m};
+    }
+
+    // ----- Gripper angle range (degrees), for protocol V3's angle mode -----
+    Range getGripperAngleRangeDeg() const
+    {
+        std::shared_lock lock(mutex_);
+        return gripper_angle_range_deg_;
+    }
+
+    void setGripperAngleRangeDeg(double min_deg, double max_deg)
+    {
+        if (!(max_deg >= min_deg)) // also refuses NaN
+            throw std::invalid_argument("max_val must be >= min_val");
+        std::unique_lock lock(mutex_);
+        gripper_angle_range_deg_ = {min_deg, max_deg};
     }
 
     // ----- Helpers -----
@@ -149,6 +165,18 @@ public:
         return static_cast<int>(std::clamp<long>(value_um, gmin_um, gmax_um));
     }
 
+    /// Clamp a V3 angle-mode gripper value in milli-degrees (0.001 deg) to the configured angle
+    /// range. Pass `enabled = false` to bypass the clamp.
+    int clampGripperMilliDeg(int value_mdeg, bool enabled = true) const
+    {
+        if (!enabled)
+            return value_mdeg;
+        auto [mn_deg, mx_deg] = getGripperAngleRangeDeg();
+        const long gmin_mdeg = std::lround(mn_deg * 1000.0);
+        const long gmax_mdeg = std::lround(mx_deg * 1000.0);
+        return static_cast<int>(std::clamp<long>(value_mdeg, gmin_mdeg, gmax_mdeg));
+    }
+
     /// Clamp gripper jaw opening in metres (native units) to the configured range. Pass
     /// `enabled = false` to bypass the clamp.
     double clampGripperMeters(double value_m, bool enabled = true) const
@@ -173,11 +201,13 @@ private:
         }
     };
     static constexpr Range kDefaultGripperRangeM{0.0, 0.07}; // 0–70mm
+    static constexpr Range kDefaultGripperAngleRangeDeg{-180.0, 180.0}; // piper_sdk's default
 
     // Storage
     mutable std::shared_mutex mutex_;
     JointLimits joint_limits_rad_{};
     Range gripper_range_m_{};
+    Range gripper_angle_range_deg_{};
     const std::string sdk_version_ = PIPER_CPP_CURRENT_VERSION;
 };
 

@@ -14,7 +14,9 @@ add_library(piper_cpp STATIC
     src/can_utils.cpp
     src/types/core.cpp
     src/protocol/piper_parser_v2.cpp
+    src/protocol/piper_parser_v3.cpp
     src/interface/piper_interface_v2.cpp
+    src/interface/piper_interface_v3.cpp
 )
 # Built as a static lib but needs to be linkable into shared libs (e.g. ROS plugins).
 set_target_properties(piper_cpp PROPERTIES POSITION_INDEPENDENT_CODE ON)

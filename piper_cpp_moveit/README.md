@@ -87,6 +87,7 @@ they're what selects the URDF, SRDF, and controllers config.
 | `with_gripper`             | `false` | URDF, SRDF, MoveIt controllers, `piper_cpp_ros` launch.          |
 | `use_real_hardware`        | `true`  | URDF (`mock_components/GenericSystem` when `false`).             |
 | `can_interface`            | `can0`  | `piper_cpp_ros` launch (real hardware only).                     |
+| `protocol_version`         | `2`     | `piper_cpp_ros` launch (real hardware only). `3` for firmware V1.8-8+. |
 | `speed_pct`                | `30`    | `piper_cpp_ros` launch (real hardware only).                     |
 | `go_to_zero_on_activate`   | `true`  | `piper_cpp_ros` launch (real hardware only).                     |
 | `gripper_max_effort`       | `1.0`   | `piper_cpp_ros` launch (real hardware + with_gripper only).      |

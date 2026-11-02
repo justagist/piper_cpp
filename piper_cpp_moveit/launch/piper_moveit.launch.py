@@ -32,6 +32,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 def _build_actions(context, *args, **kwargs):
     use_real_hardware = LaunchConfiguration("use_real_hardware").perform(context)
     can_interface = LaunchConfiguration("can_interface").perform(context)
+    protocol_version = LaunchConfiguration("protocol_version").perform(context)
     speed_pct = LaunchConfiguration("speed_pct").perform(context)
     go_to_zero_on_activate = LaunchConfiguration("go_to_zero_on_activate").perform(context)
     with_gripper_str = LaunchConfiguration("with_gripper").perform(context)
@@ -57,6 +58,7 @@ def _build_actions(context, *args, **kwargs):
         urdf_mappings = {
             "use_real_hardware": use_real_hardware,
             "can_interface": can_interface,
+            "protocol_version": protocol_version,
             "speed_pct": speed_pct,
             "go_to_zero_on_activate": go_to_zero_on_activate,
             "gripper_max_effort": gripper_max_effort,
@@ -70,6 +72,7 @@ def _build_actions(context, *args, **kwargs):
         urdf_mappings = {
             "use_real_hardware": use_real_hardware,
             "can_interface": can_interface,
+            "protocol_version": protocol_version,
             "speed_pct": speed_pct,
             "go_to_zero_on_activate": go_to_zero_on_activate,
         }
@@ -98,6 +101,7 @@ def _build_actions(context, *args, **kwargs):
         launch_arguments={
             "use_real_hardware": use_real_hardware,
             "can_interface": can_interface,
+            "protocol_version": protocol_version,
             "speed_pct": speed_pct,
             "go_to_zero_on_activate": go_to_zero_on_activate,
             "with_gripper": with_gripper_str,
@@ -143,6 +147,11 @@ def generate_launch_description():
                 "a connected Piper.",
             ),
             DeclareLaunchArgument("can_interface", default_value="can0"),
+            DeclareLaunchArgument(
+                "protocol_version",
+                default_value="2",
+                description="Piper CAN protocol: 2, or 3 for firmware V1.8-8 and newer.",
+            ),
             DeclareLaunchArgument("speed_pct", default_value="30"),
             DeclareLaunchArgument("go_to_zero_on_activate", default_value="true"),
             DeclareLaunchArgument(

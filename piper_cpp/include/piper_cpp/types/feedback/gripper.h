@@ -4,14 +4,17 @@
 #include <sstream>
 #include <string>
 
+#include "piper_cpp/types/common.h"
+
 namespace piper_cpp
 {
 
 /// Gripper feedback payload (CAN ID 0x2A8). Carries the measured jaw position, applied effort,
-/// and a packed status byte that's decoded into per-bit flags below.
+/// and a packed status byte that's decoded into per-bit flags below. V3 adds the control mode
+/// in byte 7; under V2 `mode` is always `Width`.
 struct ArmMsgFeedbackGripper
 {
-    int32_t grippers_angle{0};  ///< Measured jaw stroke, 0.001 mm.
+    int32_t grippers_angle{0};  ///< Measured jaw stroke in 0.001 mm (`Width`) or jaw angle in 0.001 deg (`Angle`).
     int16_t grippers_effort{0}; ///< Measured gripper torque, 0.001 N*m.
     uint8_t status_code{0};     ///< Raw status byte; decoded into `foc_status` by `updateFocStatus()`.
 
@@ -57,6 +60,7 @@ struct ArmMsgFeedbackGripper
     };
 
     FOCStatus foc_status; ///< Decoded view of `status_code`; populated by `updateFocStatus()`.
+    GripperMode mode{GripperMode::Width}; ///< What `grippers_angle` measures.
 
     /// Decode `status_code` into the per-bit flags in `foc_status`. The parser calls this
     /// automatically after assigning `status_code`; only invoke directly if you've manually
@@ -67,7 +71,8 @@ struct ArmMsgFeedbackGripper
     {
         std::ostringstream oss;
         oss << "ArmMsgFeedbackGripper(\n"
-            << "  grippers_angle: " << grippers_angle << " (" << grippers_angle * 0.001 << " mm)\n"
+            << "  grippers_angle: " << grippers_angle << " (" << grippers_angle * 0.001
+            << (mode == GripperMode::Angle ? " deg" : " mm") << ")\n"
             << "  grippers_effort: " << grippers_effort << " (" << grippers_effort * 0.001 << " N*m)\n"
             << "  status_code: 0x" << std::hex << int(status_code) << std::dec << "\n"
             << "  FOCStatus:\n"

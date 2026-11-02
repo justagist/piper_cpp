@@ -32,6 +32,7 @@ struct PiperMessage
     ArmMsgFeedbackStatus arm_status_msgs;
     ArmMsgEndPose arm_end_pose;
     ArmMsgJointValues arm_joint_feedback;
+    ArmMsgJointValues arm_ik_joint_feedback; ///< V3 only: joint angles from the arm's IK, 0.001 deg.
     ArmMsgFeedbackAllJointVelAcc all_joint_vel_acc;
     ArmMsgFeedbackGripper gripper_feedback;
     ArmMsgGripperTeachingPendantParam arm_gripper_teaching_param_feedback;
@@ -85,6 +86,11 @@ struct PiperMessage
         case ArmMsgType::JointFeedback34:
         case ArmMsgType::JointFeedback56:
             oss << "Joint Feed: " << arm_joint_feedback.toString() << "\n";
+            break;
+        case ArmMsgType::IKJointFeedback12:
+        case ArmMsgType::IKJointFeedback34:
+        case ArmMsgType::IKJointFeedback56:
+            oss << "IK Joint Feed: " << arm_ik_joint_feedback.toString() << "\n";
             break;
         case ArmMsgType::GripperFeedback:
             oss << "Gripper Feed: " << gripper_feedback.toString() << "\n";

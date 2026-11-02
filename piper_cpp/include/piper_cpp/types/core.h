@@ -82,7 +82,12 @@ enum class ArmMsgType : uint16_t
 
     LightCtrl,
     CanUpdateSilentModeConfig,
-    FirmwareRead
+    FirmwareRead,
+
+    // ---- Protocol V3 feedback (appended so existing values keep their numbers) ----
+    IKJointFeedback12,
+    IKJointFeedback34,
+    IKJointFeedback56,
 };
 
 /// Wire-level CAN identifiers used by the Piper protocol. Each value is the actual numeric ID
@@ -97,6 +102,9 @@ enum class CanIDPiper : uint16_t
     ARM_JOINT_FEEDBACK_34 = 0x2A6,
     ARM_JOINT_FEEDBACK_56 = 0x2A7,
     ARM_GRIPPER_FEEDBACK = 0x2A8,
+    ARM_IK_JOINT_FEEDBACK_12 = 0x2AA, ///< V3 only: joint angles from the arm's own IK, joints 1-2.
+    ARM_IK_JOINT_FEEDBACK_34 = 0x2AB,
+    ARM_IK_JOINT_FEEDBACK_56 = 0x2AC,
 
     ARM_MOTION_CTRL_1 = 0x150,
     ARM_MOTION_CTRL_2 = 0x151,

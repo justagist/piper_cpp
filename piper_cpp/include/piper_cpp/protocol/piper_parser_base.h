@@ -13,6 +13,10 @@ public:
     virtual bool decodeMessage(const struct can_frame& rx_frame, double timestamp, PiperMessage& msg) = 0;
     virtual bool encodeMessage(const PiperMessage& msg, struct can_frame& tx_frame) = 0;
     virtual uint8_t getProtocolVersion() const = 0;
+
+    /// Pack MIT targets given in physical units into this protocol's fixed-point fields. Each
+    /// input is clamped to the protocol's range first; all inputs must be finite.
+    virtual ArmMsgJointMitCtrl packJointMit(double pos_rad, double vel, double kp, double kd, double torque) const = 0;
 };
 
 } // namespace piper_cpp

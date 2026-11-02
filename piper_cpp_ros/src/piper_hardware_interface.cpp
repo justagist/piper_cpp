@@ -11,7 +11,7 @@
 #include "pluginlib/class_list_macros.hpp"
 #include "rclcpp/logging.hpp"
 
-#include "piper_cpp/interface/piper_interface_v2.h"
+#include "piper_cpp/interface/piper_interface_v3.h"
 #include "piper_cpp/types/control.h"
 #include "piper_cpp_ros/command_conversion.hpp"
 
@@ -21,6 +21,11 @@ namespace piper_cpp_ros
 namespace
 {
 constexpr auto kLogger = "PiperHardware";
+// Under protocol V3 the gripper can be in angle mode, whose value this interface would misread
+// as a jaw opening.
+constexpr auto kGripperNotWidthMode =
+    "Gripper reports angle mode (or an unknown mode); this interface only drives width mode. Send "
+    "the gripper a width-mode command (e.g. piper_cpp's controlGripperWidth()) before activating.";
 } // namespace
 
 hardware_interface::CallbackReturn
@@ -46,6 +51,15 @@ hardware_interface::CallbackReturn
     };
 
     can_interface_ = get_param("can_interface", "can0");
+    // The wrong protocol misreads MOVE M and MIT frames, so an unknown value is an error, not
+    // a fallback.
+    const std::string protocol = get_param("protocol_version", "2");
+    if (protocol != "2" && protocol != "3")
+    {
+        RCLCPP_ERROR(rclcpp::get_logger(kLogger), "protocol_version must be 2 or 3, got '%s'", protocol.c_str());
+        return hardware_interface::CallbackReturn::ERROR;
+    }
+    protocol_version_ = protocol == "3" ? 3 : 2;
     try
     {
         speed_pct_ = std::stoi(get_param("speed_pct", "30"));
@@ -173,8 +187,10 @@ hardware_interface::CallbackReturn
 
     RCLCPP_INFO(
         rclcpp::get_logger(kLogger),
-        "Configured for can_interface='%s', speed_pct=%d, go_to_zero_on_activate=%s, with_gripper=%s",
-        can_interface_.c_str(), speed_pct_, go_to_zero_on_activate_ ? "true" : "false", with_gripper_ ? "true" : "false"
+        "Configured for can_interface='%s', protocol_version=%d, speed_pct=%d, go_to_zero_on_activate=%s, "
+        "with_gripper=%s",
+        can_interface_.c_str(), protocol_version_, speed_pct_, go_to_zero_on_activate_ ? "true" : "false",
+        with_gripper_ ? "true" : "false"
     );
     if (with_gripper_)
     {
@@ -189,7 +205,10 @@ hardware_interface::CallbackReturn
 
 hardware_interface::CallbackReturn PiperHardware::on_configure(const rclcpp_lifecycle::State&)
 {
-    piper_ = std::make_unique<piper_cpp::PiperInterfaceV2>(can_interface_);
+    if (protocol_version_ == 3)
+        piper_ = std::make_unique<piper_cpp::PiperInterfaceV3>(can_interface_);
+    else
+        piper_ = std::make_unique<piper_cpp::PiperInterfaceV2>(can_interface_);
     if (!piper_->connectPort(/*can_init=*/true, /*piper_init=*/true, /*start_threads=*/true))
     {
         RCLCPP_ERROR(rclcpp::get_logger(kLogger), "Failed to open CAN port '%s'", can_interface_.c_str());
@@ -319,6 +338,11 @@ hardware_interface::CallbackReturn PiperHardware::on_activate(const rclcpp_lifec
             gs = piper_->getGripperStates(); // refresh post-zero
         }
 
+        if (gs.value.mode != piper_cpp::GripperMode::Width)
+        {
+            RCLCPP_ERROR(rclcpp::get_logger(kLogger), "%s", kGripperNotWidthMode);
+            return hardware_interface::CallbackReturn::ERROR;
+        }
         hw_state_gripper_position_ = static_cast<double>(gs.value.grippers_angle) * kUmToM;
         hw_state_gripper_effort_ = static_cast<double>(gs.value.grippers_effort) * kMilliToUnit;
         hw_command_gripper_position_ = hw_state_gripper_position_;
@@ -459,7 +483,15 @@ hardware_interface::return_type PiperHardware::read(const rclcpp::Time&, const r
             RCLCPP_ERROR(rclcpp::get_logger(kLogger), "Gripper feedback has gone stale.");
             return hardware_interface::return_type::ERROR;
         }
-        if (gs.is_valid)
+        // Like staleness, a non-width mode is only an error while active; inactive, the gripper
+        // state is just left as it was rather than reporting an angle as a jaw opening.
+        const bool width_mode = gs.value.mode == piper_cpp::GripperMode::Width;
+        if (active && gs.is_valid && !width_mode)
+        {
+            RCLCPP_ERROR(rclcpp::get_logger(kLogger), "%s", kGripperNotWidthMode);
+            return hardware_interface::return_type::ERROR;
+        }
+        if (gs.is_valid && width_mode)
         {
             hw_state_gripper_position_ = static_cast<double>(gs.value.grippers_angle) * kUmToM;
             hw_state_gripper_effort_ = static_cast<double>(gs.value.grippers_effort) * kMilliToUnit;

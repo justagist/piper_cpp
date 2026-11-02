@@ -19,6 +19,8 @@
 
 namespace piper_cpp
 {
+/// Piper arm interface speaking protocol V2. For protocol V3 (firmware V1.8-8+), construct
+/// `PiperInterfaceV3` instead: the protocol is chosen by the class, never detected.
 class PiperInterfaceV2
 {
 public:
@@ -54,7 +56,10 @@ public:
     );
 
     /// Destructor; calls `disconnectPort()` if it hasn't been called already.
-    ~PiperInterfaceV2();
+    virtual ~PiperInterfaceV2();
+
+    /// Protocol version this interface encodes and decodes: 2, or 3 for `PiperInterfaceV3`.
+    uint8_t getProtocolVersion() const { return parser_->getProtocolVersion(); }
 
     /// Open the CAN port, optionally fire the initial state-query commands, and optionally
     /// start the background read thread. Idempotent -- calling on an already-connected
@@ -126,6 +131,8 @@ public:
 
     /// Latest gripper feedback: jaw position (0.001 mm), effort (0.001 N*m), and the per-bit
     /// status flags (enable, homed, error, etc.) in `value.foc_status`. Updates at ~200 Hz.
+    /// Under V3, `value.mode` says whether the position is a width (0.001 mm) or an angle
+    /// (0.001 deg); under V2 it is always `Width`.
     StateSnapshot<ArmMsgFeedbackGripper> getGripperStates() const { return StateSnapshot(arm_gripper_msgs_); }
 
     /// Per-joint high-speed feedback: motor speed, current, position, and computed effort for
@@ -325,8 +332,9 @@ public:
     // Every send to the arm overwrites all six fields, so to make per-field updates safe
     // (so changing the movement type doesn't accidentally reset speed back to a default),
     // this class keeps a private cached copy of the last commanded state. The granular
-    // setters below mutate one field of the cache under a lock and re-send the whole
-    // message; `sendMotionCtrl2` is the all-at-once escape hatch.
+    // setters below change one field of a copy of the cache under a lock and send the whole
+    // message; `sendMotionCtrl2` is the all-at-once escape hatch. The cache only takes the
+    // new state once it has been sent, so a refused or failed send changes nothing.
 
     /// Set the top-level control source -- where the arm should be listening for commands
     /// (CAN bus, Ethernet, Wi-Fi, etc.). Use `CtrlMode::CanCmd` for normal SDK use.
@@ -359,6 +367,7 @@ public:
     /// Tell the arm how it is physically mounted (upright, side-mount left, side-mount right).
     /// This calibrates gravity compensation, so getting it right matters for hold-against-gravity.
     /// Typically a one-time commissioning step. Requires firmware V1.5-2 or newer.
+    /// `HorizontalInverted` exists only in protocol V3; under V2 the send fails.
     bool setInstallationPos(InstallationPos installation_pos);
 
     /// Set all six motion-mode fields at once in a single CAN frame. Use this when you want
@@ -431,7 +440,8 @@ public:
     /// @return true on successful CAN send.
     bool setAsSlaveArm() { return setMasterSlaveConfig(LinkageConfig::MotionOutputArm); }
 
-    /// Command the gripper to a target jaw position with a maximum effort. Send `Enable`
+    /// Command the gripper to a target jaw opening (width mode) with a maximum effort. Under V3
+    /// this is the same frame as `PiperInterfaceV3::controlGripperWidth()`. Send `Enable`
     /// once to bring the position-control loop online; subsequent frames with
     /// `status_code = Enable` update the target without changing enable state. Send
     /// `Disable` explicitly to stop the loop.
@@ -441,7 +451,8 @@ public:
     /// (check `getGripperStates().value.foc_status.homing_status`).
     ///
     /// @param grippers_angle    Target jaw stroke in micrometres (0.001 mm units). e.g. 30000 = 30 mm.
-    /// @param grippers_effort   Maximum gripper torque in 0.001 N*m. Range 0-5000 (0-5 N*m).
+    /// @param grippers_effort   Maximum gripper torque in 0.001 N*m. Range 0-5000 (0-5 N*m). Under V3
+    ///                          a larger value is refused; V2 sends it unchanged.
     /// @param status_code       Gripper enable/disable + error-clear command. Default `Enable`.
     /// @return true on successful CAN send.
     bool controlGripper(
@@ -494,16 +505,17 @@ public:
 
     /// MIT joint control for a single joint. Sends one of the per-joint MIT command frames.
     /// Pair with `setMitMode(MitMode::MIT)` and `setMoveMode(MoveMode::MoveM)`. All scalar
-    /// inputs are floats in physical units; the encoder converts to the protocol's packed
-    /// fixed-point representation internally.
+    /// inputs are floats in physical units; the parser converts them to the protocol's packed
+    /// fixed-point representation. Out-of-range values are clamped to the range.
     ///
     /// @param motor_num   Joint index 1-6.
     /// @param pos_rad     Target position in radians, range [-12.5, 12.5].
     /// @param vel         Velocity setpoint, range [-45.0, 45.0].
     /// @param kp          Position-error gain, reference 10.0, range [0.0, 500.0].
     /// @param kd          Velocity-error gain, reference 0.8, range [-5.0, 5.0].
-    /// @param torque      Feed-forward torque, range [-8.0, 8.0].
-    /// @return true on successful CAN send. Returns false if motor_num is out of range.
+    /// @param torque      Feed-forward torque, range [-8.0, 8.0] under V2 and [-16.0, 16.0] under V3.
+    /// @return true on successful CAN send. Returns false if motor_num is out of range or any
+    ///         input is NaN or infinite.
     bool controlJointMit(uint8_t motor_num, double pos_rad, double vel, double kp, double kd, double torque);
 
     // ---- Safety / mode commands (CAN ID 0x150 -- "MotionCtrl_1") ----------------------------
@@ -576,13 +588,17 @@ public:
     /// @param motor              Joint motor (1-6).
     /// @param max_angle_01deg    Max angle limit in 0.1 degrees.
     /// @param min_angle_01deg    Min angle limit in 0.1 degrees.
-    /// @param max_spd_001rad     Max joint speed in 0.001 rad/s. Range 0-3000.
+    /// @param max_spd            Max joint speed. Per the Python SDK docs, the unit depends on
+    ///                           the firmware: 0.001 rad/s before V1.5-8 and 0.01 rad/s from
+    ///                           V1.5-8, so 0-3 rad/s is 0-3000 or 0-300.
     bool setMotorAngleLimitsMaxSpeed(
-        MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd_001rad
+        MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd
     );
 
     /// Convenience: set just the max joint speed for a single motor.
-    bool setMotorMaxSpeed(MotorIndex motor, int16_t max_spd_001rad);
+    /// @param motor     Joint motor (1-6).
+    /// @param max_spd   Max joint speed, in the firmware-dependent unit described above.
+    bool setMotorMaxSpeed(MotorIndex motor, int16_t max_spd);
 
     // ---- End-effector velocity/acceleration (CAN ID 0x479) ----------------------------------
 
@@ -629,6 +645,25 @@ public:
     /// setups -- on a single arm in slave mode this command has no effect.
     bool requestMasterArmMoveToHome(MasterArmHomeMode mode);
 
+protected:
+    /// Construct with the parser for a specific protocol version. Otherwise as the public
+    /// constructors above.
+    PiperInterfaceV2(
+        std::unique_ptr<PiperParserBase> parser, std::string can_name, bool judge_flag, bool auto_init, bool dh_offset,
+        bool sdk_joint_limit, bool sdk_gripper_limit
+    );
+    PiperInterfaceV2(
+        std::unique_ptr<PiperParserBase> parser, std::unique_ptr<StdCanInterface> can, bool dh_offset,
+        bool sdk_joint_limit, bool sdk_gripper_limit
+    );
+
+    /// Send a gripper command in the given mode. The parser refuses modes its protocol lacks.
+    bool sendGripperCtrl(GripperMode mode, int32_t value, uint16_t effort, GripperStatusCode status_code);
+
+    // IK joint feedback (0x2AA-0x2AC). Only a V3 parser produces these frames, so under V2
+    // this state never becomes valid.
+    TimedFreqState<ArmMsgJointValues> arm_ik_joint_states_;
+
 private:
     /// High‐resolution timestamp in seconds
     static double getCurrentTime()
@@ -639,6 +674,17 @@ private:
 
     /// Parse a raw CAN frame and update all the TimedFreqState<> members.
     void parseCANFrame(const struct can_frame &, double timestamp);
+
+    /// Store the two joints of one part of a three-frame joint message (part 0: joints 1-2,
+    /// 1: joints 3-4, 2: joints 5-6) into `state`, clamping them to the SDK joint limits
+    /// when `clamp` is set.
+    void updateJointPair(
+        TimedFreqState<ArmMsgJointValues> &state, size_t part, const ArmMsgJointValues &src, double timestamp,
+        bool clamp
+    );
+
+    /// Clamp a gripper value to the SDK limit for its mode, if `sdk_gripper_limit` is enabled.
+    int32_t clampGripperValue(int32_t value, GripperMode mode) const;
 
     bool searchAllMotorLimits();
 
@@ -680,8 +726,7 @@ private:
     std::vector<uint8_t> firmware_data_;
     mutable std::mutex firmware_data_mutex_;
 
-    // TX shadow of the last commanded 0x151 state. Granular setters mutate one field under
-    // this mutex and re-send the whole message. Initialised to the struct's defaults
+    // TX shadow of the last 0x151 state actually sent. Initialised to the struct's defaults
     // (CanCmd / MoveJ / 50% / PositionVelocity / 0 / Invalid).
     mutable std::mutex ctrl_151_tx_mutex_;
     ArmMsgMotionCtrl_2 ctrl_151_tx_;
@@ -689,7 +734,10 @@ private:
     // Held for the whole of a multi-frame command so two callers' frames cannot interleave
     // into a target the arm never received from either.
     std::mutex multipart_tx_mutex_;
-    bool sendCommandedMotionCtrlLocked();
+    /// Send `next` as the 0x151 message and, only if that succeeds, make it the commanded
+    /// state. Otherwise a value the encoder refuses would stay in the shadow and make every
+    /// later setter fail with it. Caller must hold `ctrl_151_tx_mutex_`.
+    bool sendMotionCtrl2Locked(const ArmMsgMotionCtrl_2 &next);
 
     void resetStates();
 

@@ -1,31 +1,10 @@
 #include "piper_cpp/protocol/piper_parser_v2.h"
+#include "piper_codec.h"
 #include <algorithm>
 #include <cstring>
 
 namespace piper_cpp
 {
-
-// Utility for endian conversion, assumes network (big-endian) order.
-static int32_t bytesToInt32(const uint8_t *data)
-{
-    uint32_t val = (uint32_t(data[0]) << 24) | (uint32_t(data[1]) << 16) | (uint32_t(data[2]) << 8) | uint32_t(data[3]);
-    return static_cast<int32_t>(val); // This cast will sign-extend if MSB is set
-}
-
-static int16_t bytesToInt16(const uint8_t *data)
-{
-    uint16_t val = (uint16_t(data[0]) << 8) | uint16_t(data[1]);
-    return static_cast<int16_t>(val); // This cast will sign-extend if MSB is set
-}
-
-// For unsigned 16-bit
-static uint16_t bytesToUint16(const uint8_t *data) { return (uint16_t(data[0]) << 8) | uint16_t(data[1]); }
-
-// For signed 8-bit (this is safe, but explicit)
-static int8_t bytesToInt8(const uint8_t *data) { return static_cast<int8_t>(data[0]); }
-
-// For unsigned 8-bit
-static uint8_t bytesToUint8(const uint8_t *data) { return data[0]; }
 
 // Smallest payload each decoded ID needs: one past the last byte the decoder reads. A shorter
 // frame would otherwise be decoded from bytes that were never on the bus.
@@ -51,38 +30,7 @@ static uint8_t requiredDlc(CanIDPiper id)
     }
 }
 
-// Split a value into unsigned bytes (big-endian)
-inline void int16_to_bytes(uint16_t val, uint8_t *out)
-{
-    out[0] = (val >> 8) & 0xFF;
-    out[1] = (val) & 0xFF;
-}
-
-inline void uint16_to_bytes(uint16_t value, uint8_t *out)
-{
-    out[0] = (value >> 8) & 0xFF;
-    out[1] = value & 0xFF;
-}
-
-inline void int32_to_bytes(int32_t val, uint8_t *out)
-{
-    out[0] = (val >> 24) & 0xFF;
-    out[1] = (val >> 16) & 0xFF;
-    out[2] = (val >> 8) & 0xFF;
-    out[3] = (val) & 0xFF;
-}
-// For uint32_t
-inline void uint32_to_bytes(uint32_t val, uint8_t *out)
-{
-    out[0] = (val >> 24) & 0xFF;
-    out[1] = (val >> 16) & 0xFF;
-    out[2] = (val >> 8) & 0xFF;
-    out[3] = (val) & 0xFF;
-}
-// For 8-bit
-inline void int8_to_bytes(uint8_t val, uint8_t *out) { out[0] = val & 0xFF; }
-
-bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double timestamp, PiperMessage &msg)
+bool PiperParserV2::acceptFrame(const struct can_frame &rx_frame, double timestamp, PiperMessage &msg) const
 {
     // The Piper protocol uses standard 11-bit data frames only. Anything above those bits is
     // a remote-request, error or extended flag, or a reserved bit no valid frame sets.
@@ -91,10 +39,8 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
         msg.type = ArmMsgType::Unknown;
         return false;
     }
-    uint32_t can_id = rx_frame.can_id;
-    const uint8_t *data = rx_frame.data;
-    auto can_enum_id = static_cast<CanIDPiper>(can_id);
-    msg.can_id = can_id;
+    auto can_enum_id = static_cast<CanIDPiper>(rx_frame.can_id);
+    msg.can_id = rx_frame.can_id;
     try
     {
         msg.type = canIdToMsgType(can_enum_id);
@@ -110,9 +56,19 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
         return false;
     }
     // Only the received bytes are real; the rest of the buffer is whatever the frame carried.
-    std::copy(data, data + rx_frame.can_dlc, std::begin(msg.raw_data));
+    std::copy(rx_frame.data, rx_frame.data + rx_frame.can_dlc, std::begin(msg.raw_data));
     std::fill(std::begin(msg.raw_data) + rx_frame.can_dlc, std::end(msg.raw_data), 0);
     msg.timestamp = timestamp;
+    return true;
+}
+
+bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double timestamp, PiperMessage &msg)
+{
+    if (!acceptFrame(rx_frame, timestamp, msg))
+        return false;
+    uint32_t can_id = rx_frame.can_id;
+    const uint8_t *data = rx_frame.data;
+    auto can_enum_id = static_cast<CanIDPiper>(can_id);
 
     // ----------------- Main switch -----------------
     switch (can_enum_id)
@@ -173,6 +129,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
         msg.gripper_feedback.grippers_effort = bytesToInt16(&data[4]);
         msg.gripper_feedback.status_code = bytesToUint8(&data[6]);
         msg.gripper_feedback.updateFocStatus();
+        msg.gripper_feedback.mode = GripperMode::Width;
         break;
 
     // ----- High-speed driver feedback (per joint, 1~6) -----
@@ -311,6 +268,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
         msg.gripper_ctrl.grippers_effort = bytesToInt16(&data[4]);
         msg.gripper_ctrl.status_code = bytesToUint8(&data[6]);
         msg.gripper_ctrl.set_zero = bytesToUint8(&data[7]);
+        msg.gripper_ctrl.mode = GripperMode::Width;
         break;
     }
 
@@ -333,6 +291,7 @@ bool PiperParserV2::decodeMessage(const struct can_frame &rx_frame, double times
     }
 
     default:
+        msg.type = ArmMsgType::Unknown; // e.g. V3's IK feedback, which V2 does not define
         return false;
     }
     return true;
@@ -357,13 +316,13 @@ bool PiperParserV2::encodeMessage(const PiperMessage &msg, struct can_frame &tx_
 
     // --- Motion Ctrl 2 ---
     case ArmMsgType::MotionCtrl2:
-        tx_frame.data[0] = msg.arm_motion_ctrl_2.ctrl_mode;
-        tx_frame.data[1] = msg.arm_motion_ctrl_2.move_mode;
-        tx_frame.data[2] = msg.arm_motion_ctrl_2.move_spd_rate_ctrl;
-        tx_frame.data[3] = msg.arm_motion_ctrl_2.mit_mode;
-        tx_frame.data[4] = msg.arm_motion_ctrl_2.residence_time;
-        tx_frame.data[5] = msg.arm_motion_ctrl_2.installation_pos;
-        // [6..7] zero
+        // 0x04 is V3's horizontal-inverted mounting; V2 defines it as invalid, so never send it.
+        if (msg.arm_motion_ctrl_2.installation_pos == static_cast<uint8_t>(InstallationPos::HorizontalInverted))
+        {
+            ret = false;
+            break;
+        }
+        writeMotionCtrl2(msg.arm_motion_ctrl_2, tx_frame.data);
         break;
 
     // --- Cartesian Control (1/2/3) ---
@@ -402,10 +361,13 @@ bool PiperParserV2::encodeMessage(const PiperMessage &msg, struct can_frame &tx_
 
     // --- Gripper Control ---
     case ArmMsgType::GripperCtrl:
-        int32_to_bytes(msg.gripper_ctrl.grippers_angle, &tx_frame.data[0]);
-        uint16_to_bytes(msg.gripper_ctrl.grippers_effort, &tx_frame.data[4]);
-        tx_frame.data[6] = msg.gripper_ctrl.status_code;
-        tx_frame.data[7] = msg.gripper_ctrl.set_zero;
+        // V2 has no gripper modes: a non-width target would be read as a width.
+        if (msg.gripper_ctrl.mode != GripperMode::Width)
+        {
+            ret = false;
+            break;
+        }
+        writeGripperCtrl(msg.gripper_ctrl, msg.gripper_ctrl.status_code, tx_frame.data);
         break;
 
     // --- Master-Slave Mode Config ---
@@ -505,13 +467,8 @@ bool PiperParserV2::encodeMessage(const PiperMessage &msg, struct can_frame &tx_
         size_t joint_idx = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::JointMitCtrl1);
         const ArmMsgJointMitCtrl &mit = msg.arm_joint_mit_ctrl.motors[joint_idx];
 
-        tx_frame.data[0] = (mit.pos_ref >> 8) & 0xFF;
-        tx_frame.data[1] = mit.pos_ref & 0xFF;
-        tx_frame.data[2] = (mit.vel_ref >> 4) & 0xFF;
-        tx_frame.data[3] = ((mit.vel_ref & 0xF) << 4) | ((mit.kp >> 8) & 0x0F);
-        tx_frame.data[4] = mit.kp & 0xFF;
-        tx_frame.data[5] = (mit.kd >> 4) & 0xFF;
-        tx_frame.data[6] = ((mit.kd & 0xF) << 4) | ((mit.t_ref >> 4) & 0x0F);
+        writeMitGains(mit, tx_frame.data);
+        tx_frame.data[6] |= (mit.t_ref >> 4) & 0x0F;
 
         uint8_t crc = (tx_frame.data[0] ^ tx_frame.data[1] ^ tx_frame.data[2] ^ tx_frame.data[3] ^ tx_frame.data[4] ^
                        tx_frame.data[5] ^ tx_frame.data[6]) &
@@ -535,13 +492,22 @@ bool PiperParserV2::encodeMessage(const PiperMessage &msg, struct can_frame &tx_
     }
 
     if (ret)
-    {
-        // Every Piper command is an 8-byte standard frame whose ID follows from the type, so
-        // callers only fill in the payload fields.
-        tx_frame.can_id = static_cast<canid_t>(msgTypeToCanId(msg.type));
-        tx_frame.can_dlc = 8;
-    }
+        setCommandHeader(msg.type, tx_frame);
     return ret;
+}
+
+ArmMsgJointMitCtrl PiperParserV2::packJointMit(double pos_rad, double vel, double kp, double kd, double torque) const
+{
+    // Fixed scaling ranges per the Piper protocol; do not change without firmware reference.
+    constexpr auto q = Quantisation::Nearest;
+    ArmMsgJointMitCtrl mit;
+    mit.pos_ref = static_cast<uint16_t>(floatToUintRange(pos_rad, -12.5, 12.5, 16, q));
+    mit.vel_ref = static_cast<uint16_t>(floatToUintRange(vel, -45.0, 45.0, 12, q));
+    mit.kp = static_cast<uint16_t>(floatToUintRange(kp, 0.0, 500.0, 12, q));
+    mit.kd = static_cast<uint16_t>(floatToUintRange(kd, -5.0, 5.0, 12, q));
+    mit.t_ref = static_cast<uint16_t>(floatToUintRange(torque, -8.0, 8.0, 8, q));
+    mit.crc = 0;
+    return mit;
 }
 
 } // namespace piper_cpp

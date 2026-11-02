@@ -4,6 +4,8 @@
 #include <sstream>
 #include <string>
 
+#include "piper_cpp/types/common.h"
+
 namespace piper_cpp
 {
 
@@ -21,13 +23,16 @@ enum class CtrlMode : uint8_t
 
 /// Interpolation type for subsequent motion commands. Pick `MoveJ` when sending joint targets,
 /// `MoveL`/`MoveP` when sending end-pose targets, etc.
+///
+/// These are protocol-independent modes. Their values match the V2 wire bytes; the parser
+/// translates them for protocols that number a mode differently (V3 sends `MoveM` as 0x06).
 enum class MoveMode : uint8_t
 {
     MoveP = 0x00,   ///< Point-to-point in cartesian space.
     MoveJ = 0x01,   ///< Joint-space interpolation -- pair with joint targets.
     MoveL = 0x02,   ///< Linear cartesian -- pair with end-pose targets.
     MoveC = 0x03,   ///< Circular cartesian.
-    MoveM = 0x04,   ///< MIT torque/position-mix mode. Requires firmware V1.5-2 or newer.
+    MoveM = 0x04,   ///< MIT torque/position-mix mode. V2: wire 0x04, firmware V1.5-2+. V3: wire 0x06, firmware V1.8-8+.
     MoveCPV = 0x05, ///< Continuous position + velocity. Requires firmware V1.8-1 or newer.
 };
 
@@ -45,10 +50,11 @@ enum class MitMode : uint8_t
 /// commissioning step. Requires firmware V1.5-2 or newer.
 enum class InstallationPos : uint8_t
 {
-    Invalid = 0x00,           ///< Sentinel; firmware will reject. Useful as a "leave the current setting" placeholder.
-    HorizontalUpright = 0x01, ///< Mounted upright on a horizontal surface, cabling toward the rear.
-    SideMountLeft = 0x02,     ///< Side-mounted on the left.
-    SideMountRight = 0x03,    ///< Side-mounted on the right.
+    Invalid = 0x00,            ///< Sentinel; firmware will reject. Useful as a "leave the current setting" placeholder.
+    HorizontalUpright = 0x01,  ///< Mounted upright on a horizontal surface, cabling toward the rear.
+    SideMountLeft = 0x02,      ///< Side-mounted on the left.
+    SideMountRight = 0x03,     ///< Side-mounted on the right.
+    HorizontalInverted = 0x04, ///< Inverted on a horizontal surface. V3 only (firmware V1.8-8+).
 };
 
 /// In a leader/follower (a.k.a. master/slave) setup, which role this arm should play.
@@ -225,21 +231,27 @@ struct ArmMsgCircularPatternCoordNumUpdateCtrl
 };
 
 /// Gripper command payload (CAN ID 0x159). Sent on every cycle of the gripper control loop.
+///
+/// V3 carries the mode in bit 2 of the status byte; the V3 parser combines and splits it, so
+/// `status_code` stays a `GripperStatusCode` and `mode` holds the mode. V2 only has `Width`.
 struct ArmMsgGripperCtrl
 {
-    int32_t grippers_angle = 0;  ///< Target jaw stroke, 0.001 mm.
+    int32_t grippers_angle = 0;   ///< Target: jaw stroke in 0.001 mm (`Width`) or jaw angle in 0.001 deg (`Angle`).
     uint16_t grippers_effort = 0; ///< Max gripper torque, 0.001 N*m. Range 0-5000.
     uint8_t status_code = 0;      ///< Enable/disable + error-clear command; see `GripperStatusCode`.
     uint8_t set_zero = 0;         ///< One-shot set-zero flag; see `GripperSetZero`.
+    piper_cpp::GripperMode mode = piper_cpp::GripperMode::Width; ///< What `grippers_angle` means.
 
     std::string toString() const
     {
         std::ostringstream oss;
         oss << "ArmMsgGripperCtrl(\n"
-            << "  grippers_angle: " << grippers_angle << " (" << grippers_angle * 0.001 << " deg),\n"
+            << "  grippers_angle: " << grippers_angle << " (" << grippers_angle * 0.001
+            << (mode == piper_cpp::GripperMode::Angle ? " deg" : " mm") << "),\n"
             << "  grippers_effort: " << grippers_effort << " (" << grippers_effort * 0.001 << " Nm),\n"
             << "  status_code: " << int(status_code) << ",\n"
-            << "  set_zero: " << int(set_zero) << "\n"
+            << "  set_zero: " << int(set_zero) << ",\n"
+            << "  mode: " << int(mode) << "\n"
             << ")";
         return oss.str();
     }
@@ -274,15 +286,15 @@ struct ArmMsgJointConfig
 
 /// Per-joint MIT control payload (CAN IDs 0x15A-0x15F). Fields are pre-packed integers in the
 /// protocol's fixed-point representation; use `PiperInterfaceV2::controlJointMit()` to send
-/// natural floats and let the helper handle the float-to-uint mapping.
+/// natural floats and let the parser handle the float-to-uint mapping.
 struct ArmMsgJointMitCtrl
 {
     uint16_t pos_ref = 0; ///< Position reference (16-bit packed; unsigned mapping over [-12.5, 12.5] rad).
     uint16_t vel_ref = 0; ///< Velocity reference (12-bit packed; mapped over [-45, 45]).
     uint16_t kp = 10;     ///< Position-error gain (12-bit packed; mapped over [0, 500]).
     uint16_t kd = 0;      ///< Velocity-error gain (12-bit packed; mapped over [-5, 5]).
-    uint16_t t_ref = 0;   ///< Feed-forward torque (8-bit packed; mapped over [-8, 8]).
-    uint8_t crc = 0;      ///< Optional CRC byte (firmware-dependent; 0 if unused).
+    uint16_t t_ref = 0;   ///< Feed-forward torque. V2: 8-bit over [-8, 8]. V3: 12-bit over [-16, 16].
+    uint8_t crc = 0;      ///< Unused: the V2 encoder computes the CRC nibble itself and V3 has none.
 
     std::string toString() const
     {
@@ -368,7 +380,8 @@ struct ArmMsgMotionCtrl_1
 struct ArmMsgMotionCtrl_2
 {
     uint8_t ctrl_mode = 0x01;        ///< Top-level control source; see `CtrlMode`. Default `CanCmd`.
-    uint8_t move_mode = 0x01;        ///< Interpolation type; see `MoveMode`. Default `MoveJ`.
+    uint8_t move_mode = 0x01; ///< Interpolation type as a `MoveMode`, not a wire byte. Default `MoveJ`. A V3 echo of a
+                              ///< mode V3 does not define decodes as 0xFF, which no encoder accepts back.
     uint8_t move_spd_rate_ctrl = 50; ///< Speed cap percentage in [0, 100]. Default 50.
     uint8_t mit_mode = 0x00;         ///< MIT mode toggle; see `MitMode`. Default `PositionVelocity`.
     uint8_t residence_time = 0;      ///< Hold time at offline-trajectory waypoints (s). 0-254; 255 terminates.

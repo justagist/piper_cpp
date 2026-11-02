@@ -12,10 +12,27 @@ static constexpr double MILLIDEG2RAD = 0.001 * M_PI / 180;
 PiperInterfaceV2::PiperInterfaceV2(
     std::string can_name, bool judge_flag, bool auto_init, bool dh_offset, bool sdk_joint_limit, bool sdk_gripper_limit
 )
-    : can_name_(std::move(can_name)), sdk_joint_limit_(sdk_joint_limit), sdk_gripper_limit_(sdk_gripper_limit)
+    : PiperInterfaceV2(
+          std::make_unique<PiperParserV2>(), std::move(can_name), judge_flag, auto_init, dh_offset, sdk_joint_limit,
+          sdk_gripper_limit
+      )
 {
-    // Initialize parser and other members here
-    parser_ = std::make_unique<PiperParserV2>();
+}
+
+PiperInterfaceV2::PiperInterfaceV2(
+    std::unique_ptr<StdCanInterface> can, bool dh_offset, bool sdk_joint_limit, bool sdk_gripper_limit
+)
+    : PiperInterfaceV2(std::make_unique<PiperParserV2>(), std::move(can), dh_offset, sdk_joint_limit, sdk_gripper_limit)
+{
+}
+
+PiperInterfaceV2::PiperInterfaceV2(
+    std::unique_ptr<PiperParserBase> parser, std::string can_name, bool judge_flag, bool auto_init, bool dh_offset,
+    bool sdk_joint_limit, bool sdk_gripper_limit
+)
+    : can_name_(std::move(can_name)), parser_(std::move(parser)), sdk_joint_limit_(sdk_joint_limit),
+      sdk_gripper_limit_(sdk_gripper_limit)
+{
     fk_ = std::make_unique<PiperForwardKinematics>(dh_offset);
     arm_can_ = std::make_unique<StdCanInterface>(
         can_name_, 1000000, judge_flag, auto_init,
@@ -39,6 +56,7 @@ PiperInterfaceV2::PiperInterfaceV2(
     arm_gripper_ctrl_.setNumCallers(1);    // gripper control messages
     arm_motion_ctrl_code_151_.setNumCallers(1);
     arm_instruction_response_.setNumCallers(1);
+    arm_ik_joint_states_.setNumCallers(3); // IK joints are updated in 3 parts
 
     // Query responses and command echoes arrive once, not periodically, so their age says
     // nothing about the link; only the periodic feedback streams keep the default timeout.
@@ -57,9 +75,13 @@ PiperInterfaceV2::PiperInterfaceV2(
 }
 
 PiperInterfaceV2::PiperInterfaceV2(
-    std::unique_ptr<StdCanInterface> can, bool dh_offset, bool sdk_joint_limit, bool sdk_gripper_limit
+    std::unique_ptr<PiperParserBase> parser, std::unique_ptr<StdCanInterface> can, bool dh_offset, bool sdk_joint_limit,
+    bool sdk_gripper_limit
 )
-    : PiperInterfaceV2("", /*judge_flag=*/false, /*auto_init=*/false, dh_offset, sdk_joint_limit, sdk_gripper_limit)
+    : PiperInterfaceV2(
+          std::move(parser), "", /*judge_flag=*/false, /*auto_init=*/false, dh_offset, sdk_joint_limit,
+          sdk_gripper_limit
+      )
 {
     arm_can_ = std::move(can);
     arm_can_->setCallback([this](const struct can_frame &frame, double timestamp) { parseCANFrame(frame, timestamp); });
@@ -153,6 +175,7 @@ void PiperInterfaceV2::resetStates()
     arm_gripper_ctrl_.reset();
     arm_motion_ctrl_code_151_.reset();
     arm_instruction_response_.reset();
+    arm_ik_joint_states_.reset();
     arm_health_.reset();
     std::lock_guard<std::mutex> lk(firmware_data_mutex_);
     firmware_data_.clear();
@@ -164,7 +187,6 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
     PiperMessage msg;
     if (parser_->decodeMessage(frame, timestamp, msg))
     {
-        auto &pm = getParameterManager();
         auto health = arm_health_.getValue();
         switch (msg.type)
         {
@@ -197,67 +219,28 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
             break;
         }
         case ArmMsgType::JointFeedback12:
-        {
-            auto joint_values = arm_joint_states_.getValue();
-            if (sdk_joint_limit_)
-            {
-                joint_values.joint_1 =
-                    pm.clampJointMilliDeg(PiperParamManager::Joint::J1, msg.arm_joint_feedback.joint_1);
-                joint_values.joint_2 =
-                    pm.clampJointMilliDeg(PiperParamManager::Joint::J2, msg.arm_joint_feedback.joint_2);
-            }
-            else
-            {
-                joint_values.joint_1 = msg.arm_joint_feedback.joint_1;
-                joint_values.joint_2 = msg.arm_joint_feedback.joint_2;
-            }
-            arm_joint_states_.set(joint_values, msg.timestamp, 0);
-            break;
-        }
         case ArmMsgType::JointFeedback34:
-        {
-            auto joint_values = arm_joint_states_.getValue();
-            if (sdk_joint_limit_)
-            {
-                joint_values.joint_3 =
-                    pm.clampJointMilliDeg(PiperParamManager::Joint::J3, msg.arm_joint_feedback.joint_3);
-                joint_values.joint_4 =
-                    pm.clampJointMilliDeg(PiperParamManager::Joint::J4, msg.arm_joint_feedback.joint_4);
-            }
-            else
-            {
-                joint_values.joint_3 = msg.arm_joint_feedback.joint_3;
-                joint_values.joint_4 = msg.arm_joint_feedback.joint_4;
-            }
-            arm_joint_states_.set(joint_values, msg.timestamp, 1);
-            break;
-        }
         case ArmMsgType::JointFeedback56:
         {
-            auto joint_values = arm_joint_states_.getValue();
-            if (sdk_joint_limit_)
-            {
-                joint_values.joint_5 =
-                    pm.clampJointMilliDeg(PiperParamManager::Joint::J5, msg.arm_joint_feedback.joint_5);
-                joint_values.joint_6 =
-                    pm.clampJointMilliDeg(PiperParamManager::Joint::J6, msg.arm_joint_feedback.joint_6);
-            }
-            else
-            {
-                joint_values.joint_5 = msg.arm_joint_feedback.joint_5;
-                joint_values.joint_6 = msg.arm_joint_feedback.joint_6;
-            }
-            arm_joint_states_.set(joint_values, msg.timestamp, 2);
+            const size_t part = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::JointFeedback12);
+            updateJointPair(arm_joint_states_, part, msg.arm_joint_feedback, msg.timestamp, sdk_joint_limit_);
+            break;
+        }
+        case ArmMsgType::IKJointFeedback12:
+        case ArmMsgType::IKJointFeedback34:
+        case ArmMsgType::IKJointFeedback56:
+        {
+            // IK solutions are the arm's own targets, not measurements, so the SDK limits
+            // that guard feedback are not applied.
+            const size_t part = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::IKJointFeedback12);
+            updateJointPair(arm_ik_joint_states_, part, msg.arm_ik_joint_feedback, msg.timestamp, false);
             break;
         }
         case ArmMsgType::GripperFeedback:
         {
             // Update gripper messages
             auto gripper_fb = msg.gripper_feedback;
-            if (sdk_gripper_limit_)
-            {
-                gripper_fb.grippers_angle = pm.clampGripperMicrometers(gripper_fb.grippers_angle);
-            }
+            gripper_fb.grippers_angle = clampGripperValue(gripper_fb.grippers_angle, gripper_fb.mode);
             arm_gripper_msgs_.set(gripper_fb, msg.timestamp);
             break;
         }
@@ -372,63 +355,19 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
             break;
         }
         case ArmMsgType::JointCtrl12:
-        {
-            auto joint_ctrl = arm_joint_ctrl_msgs_.getValue();
-            if (sdk_joint_limit_)
-            {
-                joint_ctrl.joint_1 = pm.clampJointMilliDeg(PiperParamManager::Joint::J1, msg.arm_joint_ctrl.joint_1);
-                joint_ctrl.joint_2 = pm.clampJointMilliDeg(PiperParamManager::Joint::J2, msg.arm_joint_ctrl.joint_2);
-            }
-            else
-            {
-                joint_ctrl.joint_1 = msg.arm_joint_ctrl.joint_1;
-                joint_ctrl.joint_2 = msg.arm_joint_ctrl.joint_2;
-            }
-            arm_joint_ctrl_msgs_.set(joint_ctrl, msg.timestamp, 0);
-            break;
-        }
         case ArmMsgType::JointCtrl34:
-        {
-            auto joint_ctrl = arm_joint_ctrl_msgs_.getValue();
-            if (sdk_joint_limit_)
-            {
-                joint_ctrl.joint_3 = pm.clampJointMilliDeg(PiperParamManager::Joint::J3, msg.arm_joint_ctrl.joint_3);
-                joint_ctrl.joint_4 = pm.clampJointMilliDeg(PiperParamManager::Joint::J4, msg.arm_joint_ctrl.joint_4);
-            }
-            else
-            {
-                joint_ctrl.joint_3 = msg.arm_joint_ctrl.joint_3;
-                joint_ctrl.joint_4 = msg.arm_joint_ctrl.joint_4;
-            }
-            arm_joint_ctrl_msgs_.set(joint_ctrl, msg.timestamp, 1);
-            break;
-        }
         case ArmMsgType::JointCtrl56:
         {
-            auto joint_ctrl = arm_joint_ctrl_msgs_.getValue();
-            if (sdk_joint_limit_)
-            {
-                joint_ctrl.joint_5 = pm.clampJointMilliDeg(PiperParamManager::Joint::J5, msg.arm_joint_ctrl.joint_5);
-                joint_ctrl.joint_6 = pm.clampJointMilliDeg(PiperParamManager::Joint::J6, msg.arm_joint_ctrl.joint_6);
-            }
-            else
-            {
-                joint_ctrl.joint_5 = msg.arm_joint_ctrl.joint_5;
-                joint_ctrl.joint_6 = msg.arm_joint_ctrl.joint_6;
-            }
-            arm_joint_ctrl_msgs_.set(joint_ctrl, msg.timestamp, 2);
+            const size_t part = static_cast<size_t>(msg.type) - static_cast<size_t>(ArmMsgType::JointCtrl12);
+            updateJointPair(arm_joint_ctrl_msgs_, part, msg.arm_joint_ctrl, msg.timestamp, sdk_joint_limit_);
             break;
         }
         case ArmMsgType::GripperCtrl:
         {
             auto gripper_ctrl = msg.gripper_ctrl;
-            if (sdk_gripper_limit_)
-            {
-                /// WARNING: TODO: potential bug here, python docs say this ctrl feedback is in millideg, but is clamped
-                /// using the same micrometer clamping done for the gripper state feedback (which is documented to be in
-                /// micrometer)
-                gripper_ctrl.grippers_angle = pm.clampGripperMicrometers(gripper_ctrl.grippers_angle);
-            }
+            // A width frame carries 0.001 mm and a V3 angle frame 0.001 deg, so clamp with the
+            // limit for the frame's own mode.
+            gripper_ctrl.grippers_angle = clampGripperValue(gripper_ctrl.grippers_angle, gripper_ctrl.mode);
             arm_gripper_ctrl_.set(gripper_ctrl, msg.timestamp);
             break;
         }
@@ -459,6 +398,39 @@ void PiperInterfaceV2::parseCANFrame(const struct can_frame &frame, double times
 
         health.last_msg_type = msg.type;
         arm_health_.set(health, msg.timestamp);
+    }
+}
+
+void PiperInterfaceV2::updateJointPair(
+    TimedFreqState<ArmMsgJointValues> &state, size_t part, const ArmMsgJointValues &src, double timestamp, bool clamp
+)
+{
+    static constexpr int32_t ArmMsgJointValues::*kJoints[] = {
+        &ArmMsgJointValues::joint_1, &ArmMsgJointValues::joint_2, &ArmMsgJointValues::joint_3,
+        &ArmMsgJointValues::joint_4, &ArmMsgJointValues::joint_5, &ArmMsgJointValues::joint_6,
+    };
+    auto &pm = getParameterManager();
+    auto values = state.getValue();
+    for (size_t j = 2 * part; j < 2 * part + 2; ++j)
+    {
+        const int32_t v = src.*kJoints[j];
+        values.*kJoints[j] = clamp ? pm.clampJointMilliDeg(static_cast<PiperParamManager::Joint>(j), v) : v;
+    }
+    state.set(values, timestamp, part);
+}
+
+int32_t PiperInterfaceV2::clampGripperValue(int32_t value, GripperMode mode) const
+{
+    if (!sdk_gripper_limit_)
+        return value;
+    switch (mode)
+    {
+    case GripperMode::Width:
+        return getParameterManager().clampGripperMicrometers(value);
+    case GripperMode::Angle:
+        return getParameterManager().clampGripperMilliDeg(value);
+    default:
+        return value; // no limit is known for a mode this library cannot interpret
     }
 }
 
@@ -536,13 +508,15 @@ bool PiperInterfaceV2::disableRobot()
     return sendPiperMsg(msg);
 }
 
-bool PiperInterfaceV2::sendCommandedMotionCtrlLocked()
+bool PiperInterfaceV2::sendMotionCtrl2Locked(const ArmMsgMotionCtrl_2 &next)
 {
-    // Caller must hold ctrl_151_tx_mutex_.
     PiperMessage msg;
     msg.type = ArmMsgType::MotionCtrl2;
-    msg.arm_motion_ctrl_2 = ctrl_151_tx_;
-    return sendPiperMsg(msg);
+    msg.arm_motion_ctrl_2 = next;
+    if (!sendPiperMsg(msg))
+        return false;
+    ctrl_151_tx_ = next;
+    return true;
 }
 
 bool PiperInterfaceV2::sendMotionCtrl2(
@@ -553,29 +527,30 @@ bool PiperInterfaceV2::sendMotionCtrl2(
     if (move_spd_rate_ctrl > 100)
         move_spd_rate_ctrl = 100;
     std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
-    ctrl_151_tx_ = ArmMsgMotionCtrl_2{
+    return sendMotionCtrl2Locked(ArmMsgMotionCtrl_2{
         static_cast<uint8_t>(ctrl_mode),
         static_cast<uint8_t>(move_mode),
         move_spd_rate_ctrl,
         static_cast<uint8_t>(mit_mode),
         residence_time,
         static_cast<uint8_t>(installation_pos),
-    };
-    return sendCommandedMotionCtrlLocked();
+    });
 }
 
 bool PiperInterfaceV2::setCtrlMode(CtrlMode ctrl_mode)
 {
     std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
-    ctrl_151_tx_.ctrl_mode = static_cast<uint8_t>(ctrl_mode);
-    return sendCommandedMotionCtrlLocked();
+    auto next = ctrl_151_tx_;
+    next.ctrl_mode = static_cast<uint8_t>(ctrl_mode);
+    return sendMotionCtrl2Locked(next);
 }
 
 bool PiperInterfaceV2::setMoveMode(MoveMode move_mode)
 {
     std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
-    ctrl_151_tx_.move_mode = static_cast<uint8_t>(move_mode);
-    return sendCommandedMotionCtrlLocked();
+    auto next = ctrl_151_tx_;
+    next.move_mode = static_cast<uint8_t>(move_mode);
+    return sendMotionCtrl2Locked(next);
 }
 
 bool PiperInterfaceV2::setSpeedPercentage(uint8_t percentage)
@@ -583,29 +558,33 @@ bool PiperInterfaceV2::setSpeedPercentage(uint8_t percentage)
     if (percentage > 100)
         percentage = 100;
     std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
-    ctrl_151_tx_.move_spd_rate_ctrl = percentage;
-    return sendCommandedMotionCtrlLocked();
+    auto next = ctrl_151_tx_;
+    next.move_spd_rate_ctrl = percentage;
+    return sendMotionCtrl2Locked(next);
 }
 
 bool PiperInterfaceV2::setMitMode(MitMode mit_mode)
 {
     std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
-    ctrl_151_tx_.mit_mode = static_cast<uint8_t>(mit_mode);
-    return sendCommandedMotionCtrlLocked();
+    auto next = ctrl_151_tx_;
+    next.mit_mode = static_cast<uint8_t>(mit_mode);
+    return sendMotionCtrl2Locked(next);
 }
 
 bool PiperInterfaceV2::setResidenceTime(uint8_t seconds)
 {
     std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
-    ctrl_151_tx_.residence_time = seconds;
-    return sendCommandedMotionCtrlLocked();
+    auto next = ctrl_151_tx_;
+    next.residence_time = seconds;
+    return sendMotionCtrl2Locked(next);
 }
 
 bool PiperInterfaceV2::setInstallationPos(InstallationPos installation_pos)
 {
     std::lock_guard<std::mutex> lock(ctrl_151_tx_mutex_);
-    ctrl_151_tx_.installation_pos = static_cast<uint8_t>(installation_pos);
-    return sendCommandedMotionCtrlLocked();
+    auto next = ctrl_151_tx_;
+    next.installation_pos = static_cast<uint8_t>(installation_pos);
+    return sendMotionCtrl2Locked(next);
 }
 
 ArmMsgMotionCtrl_2 PiperInterfaceV2::getCommandedMotionCtrlState() const
@@ -631,13 +610,15 @@ bool PiperInterfaceV2::setMasterSlaveConfig(
 
 bool PiperInterfaceV2::controlGripper(int32_t grippers_angle, uint16_t grippers_effort, GripperStatusCode status_code)
 {
+    return sendGripperCtrl(GripperMode::Width, grippers_angle, grippers_effort, status_code);
+}
+
+bool PiperInterfaceV2::sendGripperCtrl(GripperMode mode, int32_t value, uint16_t effort, GripperStatusCode status_code)
+{
     PiperMessage msg;
     msg.type = ArmMsgType::GripperCtrl;
     msg.gripper_ctrl = ArmMsgGripperCtrl{
-        grippers_angle,
-        grippers_effort,
-        static_cast<uint8_t>(status_code),
-        static_cast<uint8_t>(GripperSetZero::NoOp),
+        value, effort, static_cast<uint8_t>(status_code), static_cast<uint8_t>(GripperSetZero::NoOp), mode,
     };
     return sendPiperMsg(msg);
 }
@@ -697,20 +678,6 @@ bool PiperInterfaceV2::controlEndPose(int32_t x_um, int32_t y_um, int32_t z_um, 
     return sendPiperMsg(msg);
 }
 
-// Float -> N-bit unsigned mapping used by the MIT joint commands. Mirrors piper_sdk's
-// FloatToUint(value, min, max, bits): clamps to [min,max], then linearly maps onto
-// [0, 2^bits - 1].
-static uint32_t floatToUintRange(double value, double min, double max, int bits)
-{
-    if (value < min)
-        value = min;
-    if (value > max)
-        value = max;
-    const double span = max - min;
-    const uint32_t max_int = (uint32_t{1} << bits) - 1u;
-    return static_cast<uint32_t>(std::lround((value - min) / span * max_int));
-}
-
 bool PiperInterfaceV2::controlJointMit(
     uint8_t motor_num, double pos_rad, double vel, double kp, double kd, double torque
 )
@@ -720,16 +687,18 @@ bool PiperInterfaceV2::controlJointMit(
         std::cerr << "controlJointMit: motor_num " << int(motor_num) << " out of range [1,6]\n";
         return false;
     }
-    // Fixed scaling ranges per the Piper protocol; do not change without firmware reference.
-    const uint16_t pos_packed = static_cast<uint16_t>(floatToUintRange(pos_rad, -12.5, 12.5, 16));
-    const uint16_t vel_packed = static_cast<uint16_t>(floatToUintRange(vel, -45.0, 45.0, 12));
-    const uint16_t kp_packed = static_cast<uint16_t>(floatToUintRange(kp, 0.0, 500.0, 12));
-    const uint16_t kd_packed = static_cast<uint16_t>(floatToUintRange(kd, -5.0, 5.0, 12));
-    const uint16_t t_packed = static_cast<uint16_t>(floatToUintRange(torque, -8.0, 8.0, 8));
+    // A NaN passes every range check and has no defined integer conversion, so it would put an
+    // arbitrary target on the bus.
+    if (!std::isfinite(pos_rad) || !std::isfinite(vel) || !std::isfinite(kp) || !std::isfinite(kd) ||
+        !std::isfinite(torque))
+    {
+        std::cerr << "controlJointMit: non-finite input for motor " << int(motor_num) << "\n";
+        return false;
+    }
 
     PiperMessage msg;
     const size_t idx = motor_num - 1;
-    msg.arm_joint_mit_ctrl.motors[idx] = ArmMsgJointMitCtrl{pos_packed, vel_packed, kp_packed, kd_packed, t_packed, 0};
+    msg.arm_joint_mit_ctrl.motors[idx] = parser_->packJointMit(pos_rad, vel, kp, kd, torque);
     msg.type = static_cast<ArmMsgType>(static_cast<int>(ArmMsgType::JointMitCtrl1) + idx);
     return sendPiperMsg(msg);
 }
@@ -812,22 +781,21 @@ bool PiperInterfaceV2::clearJointError(MotorIndex motor)
 }
 
 bool PiperInterfaceV2::setMotorAngleLimitsMaxSpeed(
-    MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd_001rad
+    MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd
 )
 {
     PiperMessage msg;
     msg.type = ArmMsgType::MotorAngleLimitMaxSpdSet;
-    msg.arm_motor_angle_limit_max_spd_set = ArmMsgCurrentMotorAngleLimitMaxSpd{
-        static_cast<uint8_t>(motor), max_angle_01deg, min_angle_01deg, max_spd_001rad
-    };
+    msg.arm_motor_angle_limit_max_spd_set =
+        ArmMsgCurrentMotorAngleLimitMaxSpd{static_cast<uint8_t>(motor), max_angle_01deg, min_angle_01deg, max_spd};
     return sendPiperMsg(msg);
 }
 
-bool PiperInterfaceV2::setMotorMaxSpeed(MotorIndex motor, int16_t max_spd_001rad)
+bool PiperInterfaceV2::setMotorMaxSpeed(MotorIndex motor, int16_t max_spd)
 {
     // 0x7FFF on the angle limit fields tells firmware V1.5-2+ to leave them untouched.
     constexpr int16_t LEAVE = static_cast<int16_t>(0x7FFF);
-    return setMotorAngleLimitsMaxSpeed(motor, LEAVE, LEAVE, max_spd_001rad);
+    return setMotorAngleLimitsMaxSpeed(motor, LEAVE, LEAVE, max_spd);
 }
 
 bool PiperInterfaceV2::setEndVelAccLimits(
