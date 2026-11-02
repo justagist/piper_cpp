@@ -65,6 +65,7 @@ pose automatically without needing a driver.
 | Param                      | Default | Meaning                                                                                                                    |
 | -------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `can_interface`            | `can0`  | SocketCAN interface to open.                                                                                               |
+| `protocol_version`         | `2`     | Piper CAN protocol, `2` or `3`. Use `3` only for firmware V1.8-8 or newer; anything else fails `on_init`.                 |
 | `speed_pct`                | `30`    | Speed-cap percentage forwarded to `MoveJ`.                                                                                 |
 | `go_to_zero_on_activate`   | `true`  | Drive arm joints to zero before handing over to the controller.                                                            |
 | `with_gripper`             | `false` | Expose a 7th prismatic joint for the parallel-jaw gripper.                                                                 |
@@ -246,6 +247,12 @@ shows the pattern.
   a second, and `write()` returns an error if any command is not a usable position or a CAN
   send fails; nothing is sent when any part of the command set is invalid. The controller
   manager then stops the controllers and the arm holds its last target, as on deactivation.
+- `protocol_version:=3` selects `piper_cpp`'s protocol V3 (firmware V1.8-8+). The interface
+  only uses joint position (MoveJ) and gripper width commands, whose frames are the same in
+  both protocols. The gripper joint models a jaw opening, so under V3 a gripper that reports
+  angle mode fails `on_activate`, makes `read()` return an error while active, and leaves the
+  gripper state unchanged while inactive. Send it a width-mode command first. V3 has not been
+  validated on a physical arm; see the `piper_cpp` README.
 - `update_rate` in [piper_controllers.yaml](config/piper_controllers.yaml) sets the
   read/write rate. 200 Hz is used, this is what the robot seem to expect; the CAN bus and
   arm firmware comfortably handle this and higher.

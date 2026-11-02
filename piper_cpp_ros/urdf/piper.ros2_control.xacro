@@ -15,10 +15,12 @@
                                  simulate position-following with no hardware required.
                                  Useful for MoveIt planning + RViz development without a
                                  connected Piper. The hardware-only params below
-                                 (can_interface, speed_pct, go_to_zero_on_activate,
+                                 (can_interface, protocol_version, speed_pct, go_to_zero_on_activate,
                                  gripper_max_effort, home_gripper_on_activate) are
                                  ignored under mock.
       can_interface              SocketCAN interface (default 'can0').
+      protocol_version           Piper CAN protocol, 2 (default) or 3. Use 3 only for
+                                 firmware V1.8-8 or newer.
       speed_pct                  Speed-cap percentage forwarded to MoveJ (default 30).
       go_to_zero_on_activate     Drive joints to zero on activation (default true).
       with_gripper               Expose a 7th prismatic joint for the parallel-jaw gripper
@@ -36,6 +38,7 @@
                params="name:=piper
                        use_real_hardware:=true
                        can_interface:=can0
+                       protocol_version:=2
                        speed_pct:=30
                        go_to_zero_on_activate:=true
                        with_gripper:=false
@@ -47,6 +50,7 @@
         <xacro:if value="${use_real_hardware}">
           <plugin>piper_cpp_ros/PiperHardware</plugin>
           <param name="can_interface">${can_interface}</param>
+          <param name="protocol_version">${protocol_version}</param>
           <param name="speed_pct">${speed_pct}</param>
           <param name="go_to_zero_on_activate">${go_to_zero_on_activate}</param>
           <param name="with_gripper">${with_gripper}</param>

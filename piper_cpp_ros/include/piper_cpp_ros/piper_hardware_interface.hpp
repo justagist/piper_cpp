@@ -27,10 +27,11 @@ namespace piper_cpp_ros
 /// parallel-jaw gripper.
 ///
 /// Lifecycle:
-///   - on_init      : parse joint list + hardware params (`can_interface`, `speed_pct`,
-///                    `go_to_zero_on_activate`, `with_gripper`, `gripper_max_effort`,
+///   - on_init      : parse joint list + hardware params (`can_interface`, `protocol_version`,
+///                    `speed_pct`, `go_to_zero_on_activate`, `with_gripper`, `gripper_max_effort`,
 ///                    `home_gripper_on_activate`); allocate state/command buffers.
-///   - on_configure : open the CAN port and start the piper_cpp read thread.
+///   - on_configure : open the CAN port with the selected protocol (V2 by default, V3 for
+///                    firmware V1.8-8+) and start the piper_cpp read thread.
 ///   - on_activate  : enable joint motors, set motion mode (CanCmd/MoveJ/PositionVelocity),
 ///                    optionally drive all joints to zero, then seed the command buffer
 ///                    from the live feedback so the first write does not jump the arm.
@@ -83,6 +84,7 @@ private:
 
     // Configurable via <hardware><param ...> in the URDF's <ros2_control> block.
     std::string can_interface_ = "can0";
+    int protocol_version_ = 2; ///< 2 or 3; chosen explicitly, never detected.
     int speed_pct_ = 30;
     bool go_to_zero_on_activate_ = true;
     bool with_gripper_ = false;
