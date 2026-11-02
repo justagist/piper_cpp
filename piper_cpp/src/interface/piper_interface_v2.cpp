@@ -812,22 +812,21 @@ bool PiperInterfaceV2::clearJointError(MotorIndex motor)
 }
 
 bool PiperInterfaceV2::setMotorAngleLimitsMaxSpeed(
-    MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd_001rad
+    MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd
 )
 {
     PiperMessage msg;
     msg.type = ArmMsgType::MotorAngleLimitMaxSpdSet;
-    msg.arm_motor_angle_limit_max_spd_set = ArmMsgCurrentMotorAngleLimitMaxSpd{
-        static_cast<uint8_t>(motor), max_angle_01deg, min_angle_01deg, max_spd_001rad
-    };
+    msg.arm_motor_angle_limit_max_spd_set =
+        ArmMsgCurrentMotorAngleLimitMaxSpd{static_cast<uint8_t>(motor), max_angle_01deg, min_angle_01deg, max_spd};
     return sendPiperMsg(msg);
 }
 
-bool PiperInterfaceV2::setMotorMaxSpeed(MotorIndex motor, int16_t max_spd_001rad)
+bool PiperInterfaceV2::setMotorMaxSpeed(MotorIndex motor, int16_t max_spd)
 {
     // 0x7FFF on the angle limit fields tells firmware V1.5-2+ to leave them untouched.
     constexpr int16_t LEAVE = static_cast<int16_t>(0x7FFF);
-    return setMotorAngleLimitsMaxSpeed(motor, LEAVE, LEAVE, max_spd_001rad);
+    return setMotorAngleLimitsMaxSpeed(motor, LEAVE, LEAVE, max_spd);
 }
 
 bool PiperInterfaceV2::setEndVelAccLimits(

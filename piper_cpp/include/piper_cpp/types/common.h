@@ -108,7 +108,7 @@ struct ArmMsgCurrentMotorAngleLimitMaxSpd
     uint8_t motor_num{0};       ///< Motor index 1-6.
     int16_t max_angle_limit{0}; ///< Max angle limit, 0.1 deg. 0x7FFF = leave unchanged (firmware V1.5-2+).
     int16_t min_angle_limit{0}; ///< Min angle limit, 0.1 deg. 0x7FFF = leave unchanged.
-    int16_t max_joint_spd{0};   ///< Max joint speed, 0.001 rad/s. Range 0-3000. 0x7FFF = leave unchanged.
+    int16_t max_joint_spd{0};   ///< Max joint speed; firmware-dependent unit, see `setMotorAngleLimitsMaxSpeed()`.
 
     std::string toString() const
     {

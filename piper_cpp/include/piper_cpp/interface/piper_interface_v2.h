@@ -576,13 +576,17 @@ public:
     /// @param motor              Joint motor (1-6).
     /// @param max_angle_01deg    Max angle limit in 0.1 degrees.
     /// @param min_angle_01deg    Min angle limit in 0.1 degrees.
-    /// @param max_spd_001rad     Max joint speed in 0.001 rad/s. Range 0-3000.
+    /// @param max_spd            Max joint speed. Per the Python SDK docs, the unit depends on
+    ///                           the firmware: 0.001 rad/s before V1.5-8 and 0.01 rad/s from
+    ///                           V1.5-8, so 0-3 rad/s is 0-3000 or 0-300.
     bool setMotorAngleLimitsMaxSpeed(
-        MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd_001rad
+        MotorIndex motor, int16_t max_angle_01deg, int16_t min_angle_01deg, int16_t max_spd
     );
 
     /// Convenience: set just the max joint speed for a single motor.
-    bool setMotorMaxSpeed(MotorIndex motor, int16_t max_spd_001rad);
+    /// @param motor     Joint motor (1-6).
+    /// @param max_spd   Max joint speed, in the firmware-dependent unit described above.
+    bool setMotorMaxSpeed(MotorIndex motor, int16_t max_spd);
 
     // ---- End-effector velocity/acceleration (CAN ID 0x479) ----------------------------------
 
