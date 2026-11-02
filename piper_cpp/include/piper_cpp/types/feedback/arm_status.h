@@ -113,8 +113,9 @@ enum class ModeFeed : uint8_t
     MOVE_J = 0x01,
     MOVE_L = 0x02,
     MOVE_C = 0x03,
-    MOVE_M = 0x04,
-    MOVE_CPV = 0x05
+    MOVE_M = 0x04, ///< Protocol-independent; V3 reports MOVE M as 0x06 on the wire and the parser maps it here.
+    MOVE_CPV = 0x05,
+    UNKNOWN = 0xFF ///< V3 only: a mode byte V3 does not define. V2 passes every byte through unchanged.
 };
 inline std::string toString(ModeFeed m)
 {

@@ -7,6 +7,15 @@
 namespace piper_cpp
 {
 
+/// What the gripper value means. Protocol V3 adds an angle mode; under V2 the gripper only
+/// has the width mode.
+enum class GripperMode : uint8_t
+{
+    Width = 0x00,   ///< Jaw opening, 0.001 mm. The only mode in V2.
+    Angle = 0x01,   ///< Jaw angle, 0.001 deg. V3 only.
+    Unknown = 0xFF, ///< A V3 frame carried a mode this library does not know.
+};
+
 /// Six-element joint angle vector. Used both for measured joint feedback (wire ID 0x2A4-0x2A6)
 /// and joint targets (0x155-0x157). Values are in 0.001-degree units.
 struct ArmMsgJointValues

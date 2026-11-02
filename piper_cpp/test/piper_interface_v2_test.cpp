@@ -2,15 +2,16 @@
 // peer end reach the interface's read thread exactly as they would from a raw CAN socket.
 
 #include "piper_cpp/interface/piper_interface_v2.h"
+#include "test_support.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <future>
-#include <initializer_list>
 #include <memory>
 #include <poll.h>
 #include <sys/socket.h>
@@ -20,51 +21,15 @@
 
 using namespace std::chrono_literals;
 using piper_cpp::PiperInterfaceV2;
-using piper_cpp::StdCanInterface;
 using std::chrono::steady_clock;
+using test_support::frame;
+using test_support::jointPairFrame;
+using test_support::makeBus;
+using test_support::sendFrame;
+using test_support::waitFor;
 
 namespace
 {
-
-struct Bus
-{
-    int peer;
-    std::unique_ptr<PiperInterfaceV2> piper; // destroyed first, so the read thread is gone before peer closes
-    ~Bus() { ::close(peer); }
-};
-
-Bus makeBus()
-{
-    int sv[2];
-    if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sv) != 0)
-        throw std::runtime_error("socketpair failed");
-    return {sv[1], std::make_unique<PiperInterfaceV2>(std::make_unique<StdCanInterface>(sv[0]))};
-}
-
-// Joint feedback frames carry two big-endian int32 angles in 0.001 deg.
-can_frame jointFeedbackFrame(uint32_t id, int32_t a, int32_t b)
-{
-    can_frame f{};
-    f.can_id = id;
-    f.can_dlc = 8;
-    const auto ua = static_cast<uint32_t>(a);
-    const auto ub = static_cast<uint32_t>(b);
-    for (int i = 0; i < 4; ++i)
-    {
-        f.data[i] = static_cast<uint8_t>(ua >> (24 - 8 * i));
-        f.data[4 + i] = static_cast<uint8_t>(ub >> (24 - 8 * i));
-    }
-    return f;
-}
-
-can_frame frame(uint32_t id, std::initializer_list<uint8_t> bytes)
-{
-    can_frame f{};
-    f.can_id = id;
-    f.can_dlc = static_cast<uint8_t>(bytes.size());
-    std::copy(bytes.begin(), bytes.end(), f.data);
-    return f;
-}
 
 // 0x473 reply: motor index, then max angle, min angle and max speed as big-endian int16.
 can_frame angleLimitReply(uint8_t motor, int16_t max_angle)
@@ -72,24 +37,6 @@ can_frame angleLimitReply(uint8_t motor, int16_t max_angle)
     const auto hi = static_cast<uint8_t>(max_angle >> 8);
     const auto lo = static_cast<uint8_t>(max_angle);
     return frame(0x473, {motor, hi, lo, 0, 0, 0, 0});
-}
-
-template <typename Pred> bool waitFor(Pred pred, std::chrono::milliseconds timeout = 2s)
-{
-    const auto deadline = steady_clock::now() + timeout;
-    while (!pred())
-    {
-        if (steady_clock::now() > deadline)
-            return false;
-        std::this_thread::sleep_for(1ms);
-    }
-    return true;
-}
-
-void sendFrame(int fd, const can_frame& f, steady_clock::time_point deadline)
-{
-    while (::send(fd, &f, sizeof(f), MSG_DONTWAIT) < 0 && errno == EAGAIN && steady_clock::now() < deadline)
-        std::this_thread::yield();
 }
 
 } // namespace
@@ -118,9 +65,9 @@ TEST(PiperInterfaceV2, ReadLoopKeepsUpWithBurst)
     const auto t0 = steady_clock::now();
     for (int n = 1; n <= kSets; ++n)
     {
-        sendFrame(bus.peer, jointFeedbackFrame(0x2A5, n, -n), deadline);
-        sendFrame(bus.peer, jointFeedbackFrame(0x2A6, 2 * n, -2 * n), deadline);
-        sendFrame(bus.peer, jointFeedbackFrame(0x2A7, 3 * n, -3 * n), deadline);
+        sendFrame(bus.peer, jointPairFrame(0x2A5, n, -n), deadline);
+        sendFrame(bus.peer, jointPairFrame(0x2A6, 2 * n, -2 * n), deadline);
+        sendFrame(bus.peer, jointPairFrame(0x2A7, 3 * n, -3 * n), deadline);
     }
     const auto send_ms = std::chrono::duration_cast<std::chrono::milliseconds>(steady_clock::now() - t0).count();
     EXPECT_LT(send_ms, 1000);
@@ -197,9 +144,9 @@ TEST(PiperInterfaceV2, DisconnectClearsCachedState)
     auto bus = makeBus();
     ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
     const auto deadline = steady_clock::now() + 5s;
-    sendFrame(bus.peer, jointFeedbackFrame(0x2A5, 1, 2), deadline);
-    sendFrame(bus.peer, jointFeedbackFrame(0x2A6, 3, 4), deadline);
-    sendFrame(bus.peer, jointFeedbackFrame(0x2A7, 5, 6), deadline);
+    sendFrame(bus.peer, jointPairFrame(0x2A5, 1, 2), deadline);
+    sendFrame(bus.peer, jointPairFrame(0x2A6, 3, 4), deadline);
+    sendFrame(bus.peer, jointPairFrame(0x2A7, 5, 6), deadline);
     ASSERT_TRUE(waitFor([&] { return bus.piper->getArmJointStates().is_valid; }));
 
     bus.piper->disconnectPort();
@@ -377,4 +324,50 @@ TEST(PiperInterfaceV2, WaitForMotorLimitsGivesUpAtTheTimeout)
     EXPECT_GE(waited, 300) << "gave up before the timeout";
     EXPECT_LT(waited, 1000);
     EXPECT_FALSE(bus.piper->getArmAllMotorAngleLimitMaxSpd().is_valid);
+}
+
+TEST(PiperInterfaceV2, MitCommandFramesAreUnchangedOnEveryJoint)
+{
+    // Worked by hand in piper_parser_v2_test: pos 0, vel 0, kp 10, kd 0.8, torque 0 packs to
+    // 80 00 80 00 52 94 78 0E under V2 (round to nearest, 8-bit torque, CRC nibble).
+    auto bus = makeBus();
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/false));
+    for (uint8_t joint = 1; joint <= 6; ++joint)
+    {
+        ASSERT_TRUE(bus.piper->controlJointMit(joint, 0.0, 0.0, 10.0, 0.8, 0.0));
+        const auto tx = test_support::receiveFrame(bus.peer);
+        ASSERT_TRUE(tx);
+        EXPECT_EQ(tx->can_id, 0x159u + joint);
+        const uint8_t expected[8] = {0x80, 0x00, 0x80, 0x00, 0x52, 0x94, 0x78, 0x0E};
+        EXPECT_TRUE(std::equal(expected, expected + 8, tx->data)) << "joint " << int(joint);
+    }
+}
+
+TEST(PiperInterfaceV2, SdkJointLimitClampsEachJointToItsOwnRange)
+{
+    // Every joint gets the same out-of-range value; each must end up at its own upper limit,
+    // in both the measured feedback and the command echo. The default limits differ per joint,
+    // so a joint read through another joint's limit shows up here.
+    auto bus = makeBus(/*dh_offset=*/true, /*sdk_joint_limit=*/true);
+    ASSERT_TRUE(bus.piper->connectPort(/*can_init=*/false, /*piper_init=*/false, /*start_threads=*/true));
+    const auto deadline = steady_clock::now() + 5s;
+    constexpr int32_t kFar = 1'000'000'000;
+    for (uint32_t id : {0x2A5u, 0x2A6u, 0x2A7u, 0x155u, 0x156u, 0x157u})
+        sendFrame(bus.peer, jointPairFrame(id, kFar, kFar), deadline);
+    ASSERT_TRUE(
+        waitFor([&] { return bus.piper->getArmJointStates().is_valid && bus.piper->getArmJointCtrlMsgs().is_valid; })
+    );
+
+    const auto& pm = piper_cpp::PiperParamManager::instance();
+    using Joint = piper_cpp::PiperParamManager::Joint;
+    for (const auto& values : {bus.piper->getArmJointStates().value, bus.piper->getArmJointCtrlMsgs().value})
+    {
+        const int32_t got[] = {values.joint_1, values.joint_2, values.joint_3,
+                               values.joint_4, values.joint_5, values.joint_6};
+        for (int j = 0; j < 6; ++j)
+        {
+            const double max_mdeg = pm.getJointLimitRad(static_cast<Joint>(j))[1] * 180.0 / M_PI * 1000.0;
+            EXPECT_NEAR(got[j], max_mdeg, 1.0) << "joint " << j + 1;
+        }
+    }
 }

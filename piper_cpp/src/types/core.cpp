@@ -128,6 +128,12 @@ CanIDPiper msgTypeToCanId(ArmMsgType type)
         return CanIDPiper::ARM_CAN_UPDATE_SILENT_MODE_CONFIG;
     case ArmMsgType::FirmwareRead:
         return CanIDPiper::ARM_FIRMWARE_READ;
+    case ArmMsgType::IKJointFeedback12:
+        return CanIDPiper::ARM_IK_JOINT_FEEDBACK_12;
+    case ArmMsgType::IKJointFeedback34:
+        return CanIDPiper::ARM_IK_JOINT_FEEDBACK_34;
+    case ArmMsgType::IKJointFeedback56:
+        return CanIDPiper::ARM_IK_JOINT_FEEDBACK_56;
     case ArmMsgType::Unknown:
         throw std::invalid_argument("Unknown ArmMsgType has no valid CAN ID");
     }
@@ -258,6 +264,12 @@ ArmMsgType canIdToMsgType(CanIDPiper id)
         return ArmMsgType::CanUpdateSilentModeConfig;
     case CanIDPiper::ARM_FIRMWARE_READ:
         return ArmMsgType::FirmwareRead;
+    case CanIDPiper::ARM_IK_JOINT_FEEDBACK_12:
+        return ArmMsgType::IKJointFeedback12;
+    case CanIDPiper::ARM_IK_JOINT_FEEDBACK_34:
+        return ArmMsgType::IKJointFeedback34;
+    case CanIDPiper::ARM_IK_JOINT_FEEDBACK_56:
+        return ArmMsgType::IKJointFeedback56;
     }
     throw std::invalid_argument("Unhandled CanIDPiper in canIdToMsgType");
 }
@@ -330,6 +342,9 @@ std::string toString(ArmMsgType type)
         CASE(LightCtrl);
         CASE(CanUpdateSilentModeConfig);
         CASE(FirmwareRead);
+        CASE(IKJointFeedback12);
+        CASE(IKJointFeedback34);
+        CASE(IKJointFeedback56);
 #undef CASE
     }
     return "Unknown";
@@ -402,6 +417,9 @@ std::string toString(CanIDPiper id)
         CASE(ARM_INFO_LOW_SPD_FEEDBACK_6);
         CASE(ARM_CAN_UPDATE_SILENT_MODE_CONFIG);
         CASE(ARM_FIRMWARE_READ);
+        CASE(ARM_IK_JOINT_FEEDBACK_12);
+        CASE(ARM_IK_JOINT_FEEDBACK_34);
+        CASE(ARM_IK_JOINT_FEEDBACK_56);
 #undef CASE
     }
     return "Unknown";

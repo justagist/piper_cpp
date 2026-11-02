@@ -2,30 +2,18 @@
 // signed fields, and that the encoder produces complete frames on its own.
 
 #include "piper_cpp/protocol/piper_parser_v2.h"
+#include "test_support.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <initializer_list>
+#include <array>
 #include <linux/can.h>
 
 using piper_cpp::ArmMsgType;
 using piper_cpp::PiperMessage;
 using piper_cpp::PiperParserV2;
-
-namespace
-{
-
-can_frame frame(uint32_t id, std::initializer_list<uint8_t> bytes)
-{
-    can_frame f{};
-    f.can_id = id;
-    f.can_dlc = static_cast<uint8_t>(bytes.size());
-    std::copy(bytes.begin(), bytes.end(), f.data);
-    return f;
-}
-
-} // namespace
+using test_support::frame;
 
 TEST(PiperParserV2, RejectsFramesThatAreNotStandardData)
 {
@@ -120,4 +108,66 @@ TEST(PiperParserV2, MotionCtrl2RoundTripsInstallationPos)
     ASSERT_TRUE(parser.decodeMessage(tx, 0.0, back));
     EXPECT_EQ(back.arm_motion_ctrl_2.move_spd_rate_ctrl, 30);
     EXPECT_EQ(back.arm_motion_ctrl_2.installation_pos, 3);
+}
+
+// V2 MIT packing as it was before V3 existed: round to nearest, 8-bit torque over [-8, 8] and a
+// CRC nibble. Code = round((x - min) * (2^bits - 1) / (max - min)), worked per field:
+//   pos 0 -> 32767.5 -> 0x8000   vel 0 -> 2047.5 -> 0x800   kp 10 -> 81.9 -> 0x052
+//   kd 0.8 -> 2375.1 -> 0x947    torque 0 -> 127.5 -> 0x80   torque -4 -> 63.75 -> 0x40
+// Byte 6 is kd[3:0]|t[7:4], byte 7 is t[3:0]|crc, crc = (byte0 ^ ... ^ byte6) & 0xF.
+TEST(PiperParserV2, MitPackingIsUnchangedByV3)
+{
+    PiperParserV2 parser;
+    struct Case
+    {
+        double torque;
+        std::array<uint8_t, 8> expected;
+    };
+    const Case cases[] = {
+        {0.0,  {0x80, 0x00, 0x80, 0x00, 0x52, 0x94, 0x78, 0x0E}}, // crc 80^00^80^00^52^94^78 = BE
+        {-4.0, {0x80, 0x00, 0x80, 0x00, 0x52, 0x94, 0x74, 0x02}}, // crc ... ^74 = B2
+    };
+    for (int joint = 1; joint <= 6; ++joint)
+    {
+        for (const auto& c : cases)
+        {
+            PiperMessage msg;
+            msg.type = static_cast<ArmMsgType>(static_cast<int>(ArmMsgType::JointMitCtrl1) + joint - 1);
+            msg.arm_joint_mit_ctrl.motors[joint - 1] = parser.packJointMit(0.0, 0.0, 10.0, 0.8, c.torque);
+            can_frame tx{};
+            ASSERT_TRUE(parser.encodeMessage(msg, tx));
+            EXPECT_EQ(tx.can_id, 0x159u + joint);
+            EXPECT_TRUE(std::equal(c.expected.begin(), c.expected.end(), tx.data)) << "joint " << joint;
+        }
+    }
+    // V2 saturates torque at +-8, so 16 encodes as 8 would.
+    EXPECT_EQ(parser.packJointMit(0, 0, 10, 0.8, 16.0).t_ref, 0xFF);
+}
+
+TEST(PiperParserV2, KeepsV2ModeNumbersAndRefusesV3OnlyValues)
+{
+    PiperParserV2 parser;
+    PiperMessage msg;
+    can_frame tx{};
+    msg.type = ArmMsgType::MotionCtrl2;
+    msg.arm_motion_ctrl_2.move_mode = static_cast<uint8_t>(piper_cpp::MoveMode::MoveM);
+    ASSERT_TRUE(parser.encodeMessage(msg, tx));
+    EXPECT_EQ(tx.data[1], 0x04) << "V2 MOVE M stays 0x04";
+
+    msg.arm_motion_ctrl_2.installation_pos = static_cast<uint8_t>(piper_cpp::InstallationPos::HorizontalInverted);
+    EXPECT_FALSE(parser.encodeMessage(msg, tx)) << "0x04 is an invalid installation position in V2";
+
+    msg.type = ArmMsgType::GripperCtrl;
+    msg.gripper_ctrl.mode = piper_cpp::GripperMode::Angle;
+    EXPECT_FALSE(parser.encodeMessage(msg, tx)) << "V2 would read an angle as a width";
+
+    // Byte 7 is not a mode under V2, whatever it holds.
+    ASSERT_TRUE(parser.decodeMessage(frame(0x2A8, {0, 0, 0x75, 0x30, 0, 0, 0, 0x01}), 0.0, msg));
+    EXPECT_EQ(msg.gripper_feedback.mode, piper_cpp::GripperMode::Width);
+
+    // Feedback bytes stay as received: V2 has no MOVE M at 0x06 and no IK feedback.
+    ASSERT_TRUE(parser.decodeMessage(frame(0x2A1, {0x01, 0x00, 0x06, 0, 0, 0, 0, 0}), 0.0, msg));
+    EXPECT_EQ(static_cast<uint8_t>(msg.arm_status_msgs.mode_feed), 0x06);
+    EXPECT_FALSE(parser.decodeMessage(frame(0x2AA, {0, 0, 0, 1, 0, 0, 0, 2}), 0.0, msg));
+    EXPECT_EQ(msg.type, ArmMsgType::Unknown);
 }

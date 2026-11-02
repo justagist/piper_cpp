@@ -15,6 +15,8 @@ bytes.
 - Full message coverage of the v2 Piper protocol: arm status, joint feedback (high- and
   low-speed), end pose, gripper feedback, motor angle/speed/acc limits, end vel/acc, crash
   protection, gripper teaching pendant, instruction-response config, firmware version.
+- Opt-in protocol V3 for firmware V1.8-8 and newer (`PiperInterfaceV3`); V2 stays the
+  default. See [Protocol V3](#protocol-v3).
 - Control APIs: enable/disable, motion-mode (granular per-field setters with TX-shadow
   merging), joint control, end-pose control, gripper control, MIT mode (torque + position
   mix control with Kp/Kd gains, in the style of the MIT mini-cheetah motor driver),
@@ -157,6 +159,106 @@ A few subtleties learned the hard way (and worth knowing before commanding the a
   power and clears all internal/error flags -- after that, `enableRobot()` and motion-mode
   setup brings it back. It's a softer alternative to a physical power cycle.
 
+## Units and ranges
+
+Every value is an integer in the unit shown unless it says otherwise.
+
+| Quantity | Unit | Range |
+| --- | --- | --- |
+| Joint angles (targets, feedback, command echo, V3 IK) | 0.001 deg | int32 |
+| End pose position X/Y/Z | 0.001 mm | int32 |
+| End pose orientation RX/RY/RZ (Euler) | 0.001 deg | int32 |
+| Speed percentage | % | 0-100, higher values clamped to 100 |
+| Offline-trajectory residence time | s | 0-254; 255 terminates the trajectory |
+| MIT position | rad (double) | [-12.5, 12.5], 16 bits |
+| MIT velocity | -- (Python SDK gives none) | [-45, 45], 12 bits |
+| MIT Kp / Kd | -- | [0, 500] / [-5, 5], 12 bits each |
+| MIT torque | -- (Python SDK gives none) | V2 [-8, 8], 8 bits; V3 [-16, 16], 12 bits |
+| Gripper width | 0.001 mm | Optional `sdk_gripper_limit` clamp, 0-70 mm |
+| Gripper angle (V3) | 0.001 deg | Optional `sdk_gripper_limit` clamp, -180 to 180 deg |
+| Gripper effort (command and feedback) | 0.001 N*m | 0-5000; V3 refuses more, V2 sends it unchanged |
+| Gripper teaching-pendant travel limit | mm | Documented values 0, 70, 100 |
+| Motor angle limits | 0.1 deg | int16; `0x7FFF` leaves the limit unchanged |
+| Max joint speed | 0.001 rad/s before firmware V1.5-8; 0.01 rad/s from V1.5-8 (per the Python SDK docs) | 0-3 rad/s; `0x7FFF` leaves it unchanged |
+| Max joint acceleration | 0.01 rad/s^2 | 0-500 (0-5 rad/s^2); the Python SDK documents the `0x47C` reply in 0.001 rad/s^2 |
+| End velocity / acceleration limits | 0.001 m/s, 0.001 rad/s, 0.001 m/s^2, 0.001 rad/s^2 | int16 |
+| Crash protection level | -- | 0-8; 0 disables detection |
+| Motor speed (high-speed feedback) | 0.001 rad/s | int16 |
+| Motor current (high-speed feedback) | 0.001 A | int16, signed |
+| Joint effort (derived from current) | 0.001 N*m | float |
+| Driver voltage (low-speed feedback) | 0.1 V | uint16 |
+| Driver and motor temperature | deg C | int16 / int8 |
+| Driver bus current | 0.001 A | uint16 |
+| State timestamps | s since the Unix epoch | double |
+
+MIT values outside their range are clamped to it, and NaN or infinite values are rejected
+(nothing is sent) under both protocols. V3 converts MIT values to codes by truncation, the
+same arithmetic as the Python SDK; V2 rounds to the nearest code, so V2 MIT frames can differ
+from the Python SDK's by one code.
+
+## Protocol V3
+
+Firmware V1.8-8 introduced protocol V3. The protocol is chosen by the class you construct,
+never detected from the arm: `PiperInterfaceV2` speaks V2 (the default, unchanged) and
+`PiperInterfaceV3` speaks V3. Using the wrong one for the firmware misreads MOVE M and MIT
+frames, so check the firmware first (`piper_read_firmware`).
+
+> [!WARNING]
+> V3 has **not** been tested on a physical arm. It is tested byte for byte against the
+> official Python SDK ([`piper_sdk`](https://github.com/agilexrobotics/piper_sdk) at commit
+> `b847e5393a7ce6ff8508d713eca7bdd3a42421b4`) and against frames worked out by hand from its
+> protocol tables. Those tests show the frames match the Python SDK's; they say nothing about
+> how the arm moves, its timing, or its safety.
+
+```cpp
+#include "piper_cpp/interface/piper_interface_v3.h"
+
+using namespace piper_cpp;
+
+PiperInterfaceV3 piper("can0");
+piper.connectPort(/*can_init=*/true, /*piper_init=*/true, /*start_threads=*/true);
+piper.enableRobot();
+
+// Every V2 call is available and means the same thing. MOVE M is still MoveMode::MoveM;
+// V3 just sends it as 0x06 instead of 0x04.
+piper.sendMotionCtrl2(CtrlMode::CanCmd, MoveMode::MoveM, 50, MitMode::MIT);
+piper.controlJointMit(1, /*pos_rad=*/0.0, /*vel=*/0.0, /*kp=*/10.0, /*kd=*/0.8, /*torque=*/0.0);
+
+// V3-only: gripper by angle or by width, and IK joint feedback.
+piper.controlGripperAngle(/*0.001 deg*/ 30000, /*0.001 N*m*/ 1000);
+piper.controlGripperWidth(/*0.001 mm*/ 40000, 1000);
+auto g = piper.getGripperStates();      // g.value.mode says what grippers_angle measures
+auto ik = piper.getArmIKJointStates();  // after a MoveP end-pose command; 0.001 deg
+```
+
+In the ROS hardware interface, set the `protocol_version` hardware parameter to `3`.
+
+### What changes in V3
+
+| Message | V2 | V3 | API in this library |
+| --- | --- | --- | --- |
+| `0x151` move mode | MOVE M = `0x04` | MOVE M = `0x06`; `0x04` undefined | `MoveMode::MoveM` either way |
+| `0x151` installation | `0x00`-`0x03` | adds `0x04`, horizontal inverted | `InstallationPos::HorizontalInverted` (V2 refuses it) |
+| `0x2A1` mode feedback | MOVE M = `0x04` | MOVE M = `0x06`; others undefined | `ModeFeed::MOVE_M`; undefined values read as `ModeFeed::UNKNOWN` |
+| `0x15A`-`0x15F` MIT | torque 8 bits over [-8, 8], CRC nibble in byte 7 | torque 12 bits over [-16, 16], no CRC | `controlJointMit()`; the range follows the protocol |
+| `0x159` gripper command | status `0`-`3` | bit 2 of the status selects angle mode | `controlGripperWidth()` / `controlGripperAngle()` |
+| `0x2A8` gripper feedback | byte 7 unused | byte 7: `0` width, `1` angle | `ArmMsgFeedbackGripper::mode` (`GripperMode::Unknown` otherwise) |
+| `0x2AA`-`0x2AC` | -- | IK joint angles, two int32 per frame | `getArmIKJointStates()` |
+
+Everything else is the V2 frame, handled by the same code.
+
+Modes in this API are protocol-independent: `MoveMode`, `ModeFeed`, `InstallationPos` and
+`GripperMode` name what you mean, and the parser translates to and from each protocol's
+bytes. `getCommandedMotionCtrlState()` and `getArmMotionCtrlCode151()` report modes in the
+same terms.
+
+### Where V3 differs from the Python SDK
+
+- The V3 `0x151` encoder rejects the values the Python SDK's V3 message class rejects. The
+  interface still clamps the speed percentage to 100 before encoding, as it does for V2.
+- `0x151` and `0x159` command echoes are read back as protocol-independent modes; the Python SDK
+  reports the raw bytes.
+
 ## CLI binaries
 
 All scripts in [scripts/](scripts/) are built as standalone CLI binaries. The most useful
@@ -186,8 +288,8 @@ prerequisites.
 ```
 piper_cpp/
 ├── include/piper_cpp/        # public headers
-│   ├── interface/            # PiperInterfaceV2 (main entry point)
-│   ├── protocol/             # PiperParserV2 (CAN frame decode)
+│   ├── interface/            # PiperInterfaceV2 / PiperInterfaceV3 (main entry points)
+│   ├── protocol/             # PiperParserV2 / PiperParserV3 (CAN frame encode/decode)
 │   ├── types/                # message structs + control enums
 │   ├── feedback/             # feedback message definitions
 │   ├── std_can_interface.h   # SocketCAN wrapper
@@ -195,7 +297,8 @@ piper_cpp/
 │   ├── fk.h                  # forward kinematics
 │   └── piper_params.h        # arm geometry + DH params
 ├── src/                      # implementations
-└── scripts/                  # CLI binaries
+├── scripts/                  # CLI binaries
+└── test/                     # unit tests; sdk_reference/ holds the Python SDK comparison frames
 ```
 
 ## License
